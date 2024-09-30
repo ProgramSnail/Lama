@@ -5,4 +5,7 @@
 *.o
 .merlin
 
+_build
+byterun/byterun
+
 .vscode
