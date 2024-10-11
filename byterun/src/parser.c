@@ -1,25 +1,15 @@
 /* Lama SM Bytecode interpreter */
 
-# include <string.h>
-# include <stdio.h>
-# include <errno.h>
-# include <malloc.h>
-# include "../runtime/runtime.h"
+#include <string.h>
+#include <errno.h>
+#include <malloc.h>
+
+#include "../../runtime/runtime.h"
+
+#include "../include/parser.h"
 
 void *__start_custom_data;
 void *__stop_custom_data;
-
-/* The unpacked representation of bytecode file */
-typedef struct {
-  char *string_ptr;              /* A pointer to the beginning of the string table */
-  int  *public_ptr;              /* A pointer to the beginning of publics table    */
-  char *code_ptr;                /* A pointer to the bytecode itself               */
-  int  *global_ptr;              /* A pointer to the global area                   */
-  int   stringtab_size;          /* The size (in bytes) of the string table        */
-  int   global_area_size;        /* The size (in words) of global area             */
-  int   public_symbols_number;   /* The number of public symbols                   */
-  char  buffer[0];               
-} bytefile;
 
 /* Gets a string from a string table by an index */
 char* get_string (bytefile *f, int pos) {
@@ -74,12 +64,12 @@ bytefile* read_file (char *fname) {
 
 /* Disassembles the bytecode pool */
 void disassemble (FILE *f, bytefile *bf) {
-  
+
 # define INT    (ip += sizeof (int), *(int*)(ip - sizeof (int)))
 # define BYTE   *ip++
 # define STRING get_string (bf, INT)
 # define FAIL   failure ("ERROR: invalid opcode %d-%d\n", h, l)
-  
+
   char *ip     = bf->code_ptr;
   char *ops [] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
   char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
@@ -90,7 +80,7 @@ void disassemble (FILE *f, bytefile *bf) {
          l = x & 0x0F;
 
     fprintf (f, "0x%.8x:\t", ip-bf->code_ptr-1);
-    
+
     switch (h) {
     case 15:
       goto stop;

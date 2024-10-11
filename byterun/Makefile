@@ -1,10 +1,10 @@
 FLAGS=-m32 -g2 -fstack-protector-all
 
-all: byterun.o
-	$(CC) $(FLAGS) -o byterun byterun.o ../runtime/runtime.a
+all: parser.o
+	$(CC) $(FLAGS) -o byterun parser.o ../runtime/runtime.a
 
-byterun.o: byterun.c
-	$(CC) $(FLAGS) -g -c byterun.c
+parser.o: src/parser.c
+	$(CC) $(FLAGS) -Iinclude/ -g -c src/parser.c
 
 clean:
 	$(RM) *.a *.o *~ byterun
