@@ -1,6 +1,9 @@
 #include "../include/interpreter.h"
 #include "../include/types.h"
+#include "../include/builtin.h"
+#include "../include/operations.h"
 #include "../../runtime/runtime.h"
+#include "../../runtime/gc.h"
 
 int ip_read_int(char** ip) {
   *ip += sizeof(int);
@@ -20,9 +23,11 @@ char* ip_read_string(char** ip, bytefile* bf) {
 void run(bytefile *bf) {
   struct State s = init_state(bf);
 
+  const size_t OPS_SIZE = 13;
   const char *ops [] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
+
+  const size_t PATS_SIZE = 7;
   const char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
-  const char *lds [] = {"LD", "LDA", "ST"};
   do {
     char* before_op_ip = s.ip; // save to set s.prev_ip
  
@@ -38,7 +43,13 @@ void run(bytefile *bf) {
       
     /* BINOP */
     case 0: // BINOP ops[l-1]
-      // TODO: all binops
+      if (l > OPS_SIZE) {
+        failure("BINOP: l > OPS_SIZE");
+      }
+      if (l < 1) {
+        failure("BINOP: l < 1");
+      }
+      f_binop(&s, ops[l-1]);
       break;
       
     case 1:
@@ -51,8 +62,9 @@ void run(bytefile *bf) {
         s_put_const_str(&s, ip_read_string(&s.ip, bf));
         break;
           
-      case  2: // SEXP %s %d
-        // TODO: call sexp ??
+      case  2: // SEXP %s %d // create sexpr with tag=%s and %d elements from stack
+        // TODO: params??
+        s_put_sexp(&s, ip_read_string(&s.ip, bf), ip_read_int(&s.ip));
         break;
         
       case  3: // STI
@@ -81,14 +93,17 @@ void run(bytefile *bf) {
         
       case  9: // DUP
         { // guess
-          struct Var v = deep_copy_var(*s.vp);
-          s_put_var(&s, v);
+          if (s.vp == s.stack || (s.fp != NULL && s.vp == s.fp->end)) {
+            failure("can't DUP: no value on stack");
+          }
+          *s.vp = *(s.vp - 1);
+          ++s.vp;
           break;
         }
 
       case 10: // SWAP
         { // guess
-          struct Var v = *s.vp;
+          struct NilT* v = *s.vp;
           *s.vp = *(s.vp - 1);
           *(s.vp - 1) = v;
         }
@@ -96,67 +111,74 @@ void run(bytefile *bf) {
 
       case 11: // ELEM
         {
-          struct Var array = s_take_var(&s);
-          struct Var index = s_take_var(&s);
-          if (array.type != ARRAY_T) {
-            failure("ERROR: elem, previous element is not array", h, l);
+          union VarT* array = s_take_var(&s);
+          union VarT* index = s_take_var(&s);
+          if (dh_type(array->nil.data_header) != ARRAY_T) {
+            failure("ELEM: elem, previous element is not array");
           }
-          if (index.type != INT_T) {
-            failure("ERROR: elem, last element is not int", h, l);
+          if (dh_type(index->nil.data_header) != INT_T) {
+            failure("ELEM: elem, last element is not int");
           }
-          s_put_var(&s, array.value.array_v[index.value.int_v]);
+          if (index->int_t.value < 0) {
+            failure("ELEM: can't access by index < 0");
+          }
+          if (index->int_t.value >= dh_param(array->array.data_header)) {
+            failure("ELEM: array index is out of range");
+          }
+          s_put_var(&s, array->array.values[index->int_t.value]);
 
-          free_var(array);
-          free_var(index);
-          // FIXME: deal vith deletion of shallow copies of locals
+          free_var_ptr(array);
+          free_var_ptr(index);
         }
         break;
         
       default:
-        failure("ERROR: invalid opcode %d-%d\n", h, l);
+        failure("invalid opcode %d-%d\n", h, l);
       }
       break;
       
-    case 2:
-    case 3:
-    case 4:
-      // fprintf (f, "%s\t", lds[h-2]);
-      switch (l) {
-      // case 0: fprintf (f, "G(%d)", INT); break;
-      // case 1: fprintf (f, "L(%d)", INT); break;
-      // case 2: fprintf (f, "A(%d)", INT); break;
-      // case 3: fprintf (f, "C(%d)", INT); break;
-      default:
-        failure("ERROR: invalid opcode %d-%d\n", h, l);
-      }
+    case 2: { // LD %d
+      int8_t category = ip_read_byte(&s.ip);
+      union VarT* var = var_by_category(&s, to_var_category(category), ip_read_int(&s.ip));
+      // TODO
       break;
-      
+    }
+    case 3: { // LDA %d
+      int8_t category = ip_read_byte(&s.ip);
+      union VarT* var = var_by_category(&s, to_var_category(category), ip_read_int(&s.ip));
+      // TODO
+      break;
+    }
+    case 4: { // ST %d
+      int8_t category = ip_read_byte(&s.ip);
+      union VarT* var = var_by_category(&s, to_var_category(category), ip_read_int(&s.ip));
+      // TODO
+      break;
+    }
     case 5:
       switch (l) {
       case  0: { // CJMPz 0x%.8x
         // FIXME: TODO: jump by top stack condition ??
         char* new_ip = (char*)(long)ip_read_int(&s.ip); // TODO: check
-        if (s_take_i(&s) != 0) { // FIXME: bools ??, other vars ??
+        if (s_take_i(&s) != 0) {
           s.ip = new_ip;
         }
         break;
       }
       case 1: { // CJMPnz  0x%.8x
-        // FIXME: TODO: jump by top stack condition ??i
+        // FIXME: TODO: jump by top stack condition ??
         char* new_ip = (char*)(long)ip_read_int(&s.ip); // TODO: check
-        if (s_take_i(&s) == 0) { // FIXME: bools ??, other vars ??
+        if (s_take_i(&s) == 0) {
           s.ip = new_ip;
         }
         break;
       }
-      case  2: // BEGIN %d %d
+      case  2: // BEGIN %d %d // function begin
         s_enter_f(&s, s.prev_ip/*ip from call*/, ip_read_int(&s.ip), ip_read_int(&s.ip));
-        // TODO: is func enter ?
         break;
         
-      case  3: // CBEGIN %d %d
+      case  3: // CBEGIN %d %d // TODO: clojure begin ??
         s_enter_f(&s, s.prev_ip/*ip from call*/, ip_read_int(&s.ip), ip_read_int(&s.ip));
-        // TODO: is func enter ?
         break;
         
       case  4: // CLOSURE 0x%.8x
@@ -169,21 +191,19 @@ void run(bytefile *bf) {
             // case 2: // A(%d)
             // case 3: // C(%d)
             default:
-              failure("ERROR: invalid opcode %d-%d\n", h, l);
+              failure("invalid opcode %d-%d\n", h, l);
             }
           }
         };
         break;
           
-      case  5: // CALLC %d
-        // TODO: no arguments given ??
-        // TODO: jump only ??
-        s.ip = (char*)(long)ip_read_int(&s.ip); // TODO: check
+      case  5: // CALLC %d // call clojure
+        // TODO FIXME: call clojure
+        // s.ip = (char*)(long)ip_read_int(&s.ip); // TODO: check
         break;
         
-      case  6: // CALL 0x%.8x %d
-        // TODO: second arg is given params amount ??
-        // TODO: jump only ??
+      case  6: // CALL 0x%.8x %d // call function
+        // FIXME: second arg ??
         s.ip = (char*)(long)ip_read_int(&s.ip); // TODO: check
         break;
         
@@ -196,8 +216,7 @@ void run(bytefile *bf) {
         break;
         
       case  9: // FAIL %d %d
-        // TODO: ??
-        failure("FAIL: %d-%d\n", ip_read_int(&s.ip), ip_read_int(&s.ip));
+        failure("[FAIL]: %d-%d\n", ip_read_int(&s.ip), ip_read_int(&s.ip));
         break;
         
       case 10: // LINE %d
@@ -205,7 +224,7 @@ void run(bytefile *bf) {
         break;
 
       default:
-        failure("ERROR: invalid opcode %d-%d\n", h, l);
+        failure("invalid opcode %d-%d\n", h, l);
       }
       break;
       
@@ -236,18 +255,18 @@ void run(bytefile *bf) {
         break;
 
       default:
-        failure("ERROR: invalid opcode %d-%d\n", h, l);
+        failure("invalid opcode %d-%d\n", h, l);
       }
     }
     break;
       
     default:
-      failure("ERROR: invalid opcode %d-%d\n", h, l);
+      failure("invalid opcode %d-%d\n", h, l);
     }
 
     s.prev_ip = before_op_ip;
   }
   while (1);
 stop:;
-  free_state(&s);
+  destruct_state(&s);
 }

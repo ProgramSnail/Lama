@@ -33,3 +33,51 @@ inline void f_cons(struct State *s) {
 
   // TODO
 }
+
+// TODO
+inline void f_binop(struct State *s, const char *opr) {
+  size_t len = strlen(opr);
+
+  if (len < 1) {
+    failure("empty operation");
+  }
+  switch (opr[0]) {
+  case '+':
+    break;
+  case '-':
+    break;
+  case '*':
+    break;
+  case '/':
+    break;
+  case '%':
+    break;
+  case '<':
+    if (len == 1) { // <
+
+    } else { // <=
+    }
+    break;
+  case '>':
+    if (len == 1) { // >
+
+    } else { // >=
+    }
+    break;
+  case '=': // ==
+    break;
+  case '!':
+    if (len == 1) {
+      failure("'!...' opr len is 1");
+    }
+    if (opr[1] == '=') { // !=
+
+    } else { // !!
+    }
+    break;
+  case '&': // &&
+    break;
+  default:
+    failure("unknown operation");
+  }
+}

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../../runtime/runtime.h"
 #include "parser.h"
 #include <stdint.h>
 
@@ -18,43 +19,44 @@ enum Type {
 };
 
 struct NilT { // AnyVarT too
-  int32_t data_header;
+  uint32_t data_header;
 };
 
 struct IntT {
-  int32_t data_header;
+  uint32_t data_header;
   int32_t value; // int value => size = 1;
 };
 
 struct ConstStrT {
-  int32_t data_header;
+  uint32_t data_header;
   const char *value;
 };
 
 struct StrT {
-  int32_t data_header;
+  uint32_t data_header;
   char *value;
 };
 
 struct ListT {
-  int32_t data_header;
+  uint32_t data_header;
   struct NilT *value;
   struct NilT *next;
 };
 
 struct ArrayT {
-  int32_t data_header;
+  uint32_t data_header;
   struct NilT **values;
 };
+const size_t MAX_ARRAY_SIZE = 0x11111110;
 
 struct SExpT {
-  int32_t data_header;
+  uint32_t data_header;
   const char *tag;
   struct NilT *next;
 };
 
 struct FunT {
-  int32_t data_header;
+  uint32_t data_header;
   char *fun_ip;
 };
 
@@ -82,11 +84,12 @@ inline union VarT *to_var(struct NilT *var) { return (union VarT *)var; }
 // ------ Frame ------
 
 struct Frame {
-  char *rp;             // ret instruction pointer
-  struct NilT **ret;    // store returned value
-  struct NilT **params; // store arguments
-  struct NilT **locals; // store locals
-  struct NilT **end;    // store locals
+  struct NilT *ret;      // store returned value
+  char *rp;              // ret instruction pointer
+  struct Frame *prev_fp; // ret function frame pointer
+  void **params;         // store arguments
+  void **locals;         // store locals
+  void **end;            // store locals
 };
 
 inline uint64_t frame_locals_sz(struct Frame *frame) {
@@ -101,16 +104,16 @@ inline uint64_t frame_params_sz(struct Frame *frame) {
 union StackValue {
   union VarT *var;
   union VarT **var_ptr;
-  // struct Frame frame; // TODO
+  struct Frame frame; // ??
   char *addr;
 };
 
 // inline StackValue *to_sv(void *var) { return (StackValue *)var; }
 
 struct State {
-  union StackValue *stack; // vaid**
-  struct NilT **vp;        // var pointer
-  struct Frame *fp;        // function frame pointer
+  void **stack;     // vaid**
+  void **vp;        // stack pointer
+  struct Frame *fp; // function frame pointer
 
   char *ip;      // instruction pointer
   char *prev_ip; // prev instruction pointer
@@ -118,3 +121,19 @@ struct State {
 
 struct State init_state(bytefile *bf);
 void destruct_state(struct State *state);
+
+// ------ VarCategory ------
+
+enum VarCategory {
+  VAR_GLOBAL = 0,
+  VAR_LOCAL = 1,
+  VAR_A = 2, // TODO: ??
+  VAR_C = 3  // TODO: ??
+};
+
+inline enum VarCategory to_var_category(uint8_t category) {
+  if (category > 3) {
+    failure("unexpected variable category");
+  }
+  return (VarCategory)category;
+}
