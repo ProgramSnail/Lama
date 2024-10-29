@@ -21,7 +21,7 @@ inline void free_var(union VarT var) {
   case STR_T:
     free(var.str.value);
     break;
-  case LIST_T:
+  case CLOJURE_T:
     if (var.list.value != NULL) {
       free_var_ptr(to_var(var.list.value));
     }
@@ -107,10 +107,6 @@ inline void s_put_str(struct State *s, char *val) {
   s_put_var(s, (NilT *)var);
 }
 
-inline void s_put_enum(struct State *s, const char *tag, int args_sz) {
-  // TODO FIXME
-}
-
 inline void s_put_array(struct State *s, int sz) {
   struct ArrayT *var = (ArrayT *)alloc(sizeof(ArrayT));
 
@@ -131,15 +127,42 @@ inline void s_put_array(struct State *s, int sz) {
   s_put_var(s, (NilT *)var);
 }
 
-inline void s_put_list(struct State *s, struct NilT *first_elem) {
-  struct ListT *var = (ListT *)alloc(sizeof(ListT));
-  var->data_header = LIST_T; // no param
-  var->value = first_elem;
-  var->next = NULL;
+inline union VarT *s_take_var(struct State *s);
+inline void s_put_sexp(struct State *s, const char *tag, int sz) {
+  struct SExpT *var = (SExpT *)alloc(sizeof(SExpT));
 
+  if (sz < 0) {
+    failure("array size < 0");
+  }
+
+  if (sz > MAX_ARRAY_SIZE) {
+    failure("too big array size");
+  }
+
+  var->data_header = sz & SEXP_T;
+  var->values = (NilT **)alloc(sizeof(NilT *) * sz);
+
+  var->tag = tag;
+
+  for (size_t i = 0; i < sz; ++i) {
+    var->values[i] = (NilT *)s_take_var(s);
+  }
   s_put_var(s, (NilT *)var);
+}
 
-  *first_elem = clear_var();
+// inline void s_put_empty_list(struct State *s, struct NilT *first_elem) {
+//   struct ListT *var = (ListT *)alloc(sizeof(ListT));
+//   var->data_header = LIST_T; // no param
+//   var->value = first_elem;
+//   var->next = NULL;
+
+//   s_put_var(s, (NilT *)var);
+
+//   *first_elem = clear_var();
+// }
+
+inline void s_put_sexp(struct State *s, , int args_sz) {
+  // TODO FIXME
 }
 
 // ------ take from stack ------
@@ -236,7 +259,33 @@ inline void s_exit_f(struct State *s) {
   s->fp = s->fp->prev_fp;
 }
 
-inline union VarT *var_by_category(struct State *s, enum VarCategory category,
-                                   int id) {
-  // TODO: FIXME
+inline union VarT **var_by_category(struct State *s, enum VarCategory category,
+                                    int id) {
+  VarT **var = NULL;
+  switch (category) {
+  case VAR_GLOBAL:
+    // TODO: FIXME
+    break;
+  case VAR_LOCAL:
+    if (s->fp == NULL) {
+      failure("can't read local outside of function");
+    }
+    if (id < 0) {
+      failure("can't read local: negative id %i", id);
+    }
+    if (frame_locals_sz(s->fp) <= id) {
+      failure("can't read local: too big id, %i >= %ul", frame_locals_sz(s->fp),
+              id);
+    }
+    var = (VarT **)&s->fp->locals[id];
+    break;
+  case VAR_A:
+    // TODO
+    break;
+  case VAR_C:
+    // TODO
+    break;
+  }
+
+  return var;
 }

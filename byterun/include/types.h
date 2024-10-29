@@ -6,13 +6,12 @@
 
 // ------ Var ------
 
-// TODO: clojures
 enum Type {
   NIL_T = 0x00000000,
   INT_T = 0x00000001,
   CONST_STR_T = 0x00000002,
   STR_T = 0x00000003,
-  LIST_T = 0x00000004,
+  CLOJURE_T = 0x00000004,
   ARRAY_T = 0x00000005,
   SEXP_T = 0x00000006,
   FUN_T = 0x00000007
@@ -37,11 +36,17 @@ struct StrT {
   char *value;
 };
 
-struct ListT {
+struct ClojureT { // TODO
   uint32_t data_header;
-  struct NilT *value;
-  struct NilT *next;
-};
+  char *fun_ip;
+  struct ArrayT *vars;
+}
+
+// struct ListT {
+//   uint32_t data_header;
+//   struct NilT *value;
+//   struct NilT *next;
+// };
 
 struct ArrayT {
   uint32_t data_header;
@@ -52,7 +57,7 @@ const size_t MAX_ARRAY_SIZE = 0x11111110;
 struct SExpT {
   uint32_t data_header;
   const char *tag;
-  struct NilT *next;
+  struct NilT **values;
 };
 
 struct FunT {
@@ -65,7 +70,8 @@ union VarT {
   struct IntT int_t;
   struct ConstStrT const_str;
   struct StrT str;
-  struct ListT list;
+  struct ClojureT clojure;
+  // struct ListT list;
   struct ArrayT array;
   struct SExpT sexp;
   struct FunT fun;

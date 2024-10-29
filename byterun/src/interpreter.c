@@ -63,7 +63,7 @@ void run(bytefile *bf) {
         break;
           
       case  2: // SEXP %s %d // create sexpr with tag=%s and %d elements from stack
-        // TODO: params??
+        // params read from stack
         s_put_sexp(&s, ip_read_string(&s.ip, bf), ip_read_int(&s.ip));
         break;
         
@@ -139,26 +139,25 @@ void run(bytefile *bf) {
       
     case 2: { // LD %d
       int8_t category = ip_read_byte(&s.ip);
-      union VarT* var = var_by_category(&s, to_var_category(category), ip_read_int(&s.ip));
-      // TODO
+      union VarT** var_ptr = var_by_category(&s, to_var_category(category), ip_read_int(&s.ip));
+      s_put_var(&s, (struct NilT*)*var_ptr); // TODO: check
       break;
     }
     case 3: { // LDA %d
       int8_t category = ip_read_byte(&s.ip);
-      union VarT* var = var_by_category(&s, to_var_category(category), ip_read_int(&s.ip));
+      union VarT** var_ptr = var_by_category(&s, to_var_category(category), ip_read_int(&s.ip));
       // TODO
       break;
     }
     case 4: { // ST %d
       int8_t category = ip_read_byte(&s.ip);
-      union VarT* var = var_by_category(&s, to_var_category(category), ip_read_int(&s.ip));
-      // TODO
+      union VarT** var_ptr = var_by_category(&s, to_var_category(category), ip_read_int(&s.ip));
+      *var_ptr = s_take_var(&s); // TODO: check
       break;
     }
     case 5:
       switch (l) {
       case  0: { // CJMPz 0x%.8x
-        // FIXME: TODO: jump by top stack condition ??
         char* new_ip = (char*)(long)ip_read_int(&s.ip); // TODO: check
         if (s_take_i(&s) != 0) {
           s.ip = new_ip;
@@ -166,7 +165,6 @@ void run(bytefile *bf) {
         break;
       }
       case 1: { // CJMPnz  0x%.8x
-        // FIXME: TODO: jump by top stack condition ??
         char* new_ip = (char*)(long)ip_read_int(&s.ip); // TODO: check
         if (s_take_i(&s) == 0) {
           s.ip = new_ip;
