@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../../runtime/runtime.h"
 #include "parser.h"
+#include "runtime.h"
 #include <stdint.h>
 
 // ------ Var ------
@@ -9,7 +9,7 @@
 enum Type {
   NIL_T = 0x00000000,
   INT_T = 0x00000001,
-  CONST_STR_T = 0x00000002,
+  BOX_T = 0x00000002,
   STR_T = 0x00000003,
   CLOJURE_T = 0x00000004,
   ARRAY_T = 0x00000005,
@@ -23,24 +23,24 @@ struct NilT { // AnyVarT too
 
 struct IntT {
   uint32_t data_header;
-  int32_t value; // int value => size = 1;
+  int32_t value;
 };
 
-struct ConstStrT {
+struct BoxT {
   uint32_t data_header;
-  const char *value;
+  struct NilT **value;
 };
 
 struct StrT {
-  uint32_t data_header;
-  char *value;
+  uint32_t data_header; // param - is not const (0 for const, 1 for not const)
+  const char *value;
 };
 
 struct ClojureT { // TODO
   uint32_t data_header;
   char *fun_ip;
   struct ArrayT *vars;
-}
+};
 
 // struct ListT {
 //   uint32_t data_header;
@@ -68,7 +68,7 @@ struct FunT {
 union VarT {
   struct NilT nil;
   struct IntT int_t;
-  struct ConstStrT const_str;
+  struct BoxT box;
   struct StrT str;
   struct ClojureT clojure;
   // struct ListT list;
@@ -79,7 +79,7 @@ union VarT {
 
 // same to TAG in runtime
 inline enum Type dh_type(int data_header) {
-  return (Type)(data_header & 0x00000007);
+  return (enum Type)(data_header & 0x00000007);
 }
 
 // same to LEN in runtime
@@ -141,5 +141,5 @@ inline enum VarCategory to_var_category(uint8_t category) {
   if (category > 3) {
     failure("unexpected variable category");
   }
-  return (VarCategory)category;
+  return (enum VarCategory)category;
 }

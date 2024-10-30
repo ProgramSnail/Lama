@@ -4,9 +4,9 @@
 #include <errno.h>
 #include <malloc.h>
 
-#include "../../runtime/runtime.h"
+#include "runtime.h"
 
-#include "../include/parser.h"
+#include "parser.h"
 
 void *__start_custom_data;
 void *__stop_custom_data;
@@ -284,8 +284,3 @@ void dump_file (FILE *f, bytefile *bf) {
   disassemble (f, bf);
 }
 
-int main (int argc, char* argv[]) {
-  bytefile *f = read_file (argv[1]);
-  dump_file (stdout, f);
-  return 0;
-}

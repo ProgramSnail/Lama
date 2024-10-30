@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../../runtime/gc.h"
-#include "../../runtime/runtime.h"
+#include "gc.h"
+#include "runtime.h"
 #include "types.h"
 
 #include "stdlib.h"
@@ -16,18 +16,16 @@ inline void free_var(union VarT var) {
     break;
   case INT_T:
     break;
-  case CONST_STR_T:
+  case BOX_T:
+    // pointer, do not free original object
     break;
   case STR_T:
-    free(var.str.value);
+    if (dh_param(var.str.data_header)) { // not const string
+      // free(var.str.value); // FIXME
+    }
     break;
   case CLOJURE_T:
-    if (var.list.value != NULL) {
-      free_var_ptr(to_var(var.list.value));
-    }
-    if (var.list.next != NULL) {
-      free_var_ptr(to_var(var.list.next));
-    }
+    // TODO
     break;
   case ARRAY_T:
     // dh param is size
@@ -38,8 +36,11 @@ inline void free_var(union VarT var) {
     break;
   case SEXP_T:
     // tag is const string, no need to free
-    if (var.sexp.next != NULL) {
-      // free(var.sexp.next); // FIXME
+    if (var.sexp.values != NULL) {
+      for (size_t i = 0; i < dh_param(var.sexp.data_header); ++i) {
+        free_var_ptr(to_var(var.sexp.values[i]));
+      }
+      // free(var.sexp.values); // FIXME
     }
     break;
   case FUN_T:
@@ -55,17 +56,20 @@ inline void free_var_ptr(union VarT *var) {
 
 //
 
-inline struct NilT clear_var() { return NilT{.data_header = NIL_T}; }
+inline struct NilT clear_var() {
+  struct NilT var = {.data_header = NIL_T};
+  return var;
+}
 
 // ------ put on stack ---
 
 inline void s_put_ptr(struct State *s, char *val) { // any var
-  *s->vp = (NilT *)val;
+  *s->vp = (struct NilT *)val;
   ++s->vp;
 }
 
 inline void s_put_var_ptr(struct State *s, struct NilT **val) { // any var
-  *s->vp = (NilT *)val;
+  *s->vp = (struct NilT *)val;
   ++s->vp;
 }
 
@@ -75,7 +79,7 @@ inline void s_put_var(struct State *s, struct NilT *val) { // any var
 }
 
 inline void s_put_nil(struct State *s) {
-  struct NilT *var = (NilT *)alloc(sizeof(NilT));
+  struct NilT *var = (struct NilT *)alloc(sizeof(struct NilT));
   var->data_header = NIL_T; // no param
   s_put_var(s, var);
 }
@@ -87,28 +91,35 @@ inline void s_putn_nil(struct State *s, size_t n) {
 }
 
 inline void s_put_i(struct State *s, int val) {
-  struct IntT *var = (IntT *)alloc(sizeof(IntT));
+  struct IntT *var = (struct IntT *)alloc(sizeof(struct IntT));
   var->data_header = INT_T; // no param
   var->value = val;
-  s_put_var(s, (NilT *)var);
+  s_put_var(s, (struct NilT *)var);
+}
+
+inline void s_put_box(struct State *s, struct NilT **val) {
+  struct BoxT *var = (struct BoxT *)alloc(sizeof(struct BoxT));
+  var->data_header = BOX_T; // no param
+  var->value = val;
+  s_put_var(s, (struct NilT *)var);
 }
 
 inline void s_put_const_str(struct State *s, const char *val) {
-  struct ConstStrT *var = (ConstStrT *)alloc(sizeof(ConstStrT));
-  var->data_header = CONST_STR_T; // no param
+  struct StrT *var = (struct StrT *)alloc(sizeof(struct StrT));
+  var->data_header = 0 & STR_T; // param - is const
   var->value = val;
-  s_put_var(s, (NilT *)var);
+  s_put_var(s, (struct NilT *)var);
 }
 
 inline void s_put_str(struct State *s, char *val) {
-  struct StrT *var = (StrT *)alloc(sizeof(StrT));
-  var->data_header = STR_T; // no param
+  struct StrT *var = (struct StrT *)alloc(sizeof(struct StrT));
+  var->data_header = 1 & STR_T; // param - is not const
   var->value = val;
-  s_put_var(s, (NilT *)var);
+  s_put_var(s, (struct NilT *)var);
 }
 
 inline void s_put_array(struct State *s, int sz) {
-  struct ArrayT *var = (ArrayT *)alloc(sizeof(ArrayT));
+  struct ArrayT *var = (struct ArrayT *)alloc(sizeof(struct ArrayT));
 
   if (sz < 0) {
     failure("array size < 0");
@@ -119,17 +130,17 @@ inline void s_put_array(struct State *s, int sz) {
   }
 
   var->data_header = sz & ARRAY_T;
-  var->values = (NilT **)alloc(sizeof(NilT *) * sz);
+  var->values = (struct NilT **)alloc(sizeof(struct NilT *) * sz);
 
   for (size_t i = 0; i < sz; ++i) {
     var->values[i] = NULL;
   }
-  s_put_var(s, (NilT *)var);
+  s_put_var(s, (struct NilT *)var);
 }
 
 inline union VarT *s_take_var(struct State *s);
 inline void s_put_sexp(struct State *s, const char *tag, int sz) {
-  struct SExpT *var = (SExpT *)alloc(sizeof(SExpT));
+  struct SExpT *var = (struct SExpT *)alloc(sizeof(struct SExpT));
 
   if (sz < 0) {
     failure("array size < 0");
@@ -140,14 +151,14 @@ inline void s_put_sexp(struct State *s, const char *tag, int sz) {
   }
 
   var->data_header = sz & SEXP_T;
-  var->values = (NilT **)alloc(sizeof(NilT *) * sz);
+  var->values = (struct NilT **)alloc(sizeof(struct NilT *) * sz);
 
   var->tag = tag;
 
   for (size_t i = 0; i < sz; ++i) {
-    var->values[i] = (NilT *)s_take_var(s);
+    var->values[i] = (struct NilT *)s_take_var(s);
   }
-  s_put_var(s, (NilT *)var);
+  s_put_var(s, (struct NilT *)var);
 }
 
 // inline void s_put_empty_list(struct State *s, struct NilT *first_elem) {
@@ -156,14 +167,10 @@ inline void s_put_sexp(struct State *s, const char *tag, int sz) {
 //   var->value = first_elem;
 //   var->next = NULL;
 
-//   s_put_var(s, (NilT *)var);
+//   s_put_var(s, (struct NilT *)var);
 
 //   *first_elem = clear_var();
 // }
-
-inline void s_put_sexp(struct State *s, , int args_sz) {
-  // TODO FIXME
-}
 
 // ------ take from stack ------
 
@@ -173,7 +180,7 @@ inline union VarT *s_take_var(struct State *s) {
   }
   --s->vp;
 
-  union VarT *ret = (VarT *)*s->vp;
+  union VarT *ret = (union VarT *)*s->vp;
   *s->vp = NULL; // clear top var
   return ret;
 }
@@ -191,7 +198,7 @@ inline void s_drop_var(struct State *s) {
     failure("drop: no var");
   }
   --s->vp;
-  free_var_ptr((VarT *)*s->vp);
+  free_var_ptr((union VarT *)*s->vp);
   *s->vp = NULL;
 }
 
@@ -210,11 +217,11 @@ inline void s_dropn_var(struct State *s, size_t n) {
 // before / after new frame added
 inline void s_enter_f(struct State *s, char *func_ip, size_t params_sz,
                       size_t locals_sz) {
-  if (params_sz > s->vp - s->stack or
-      (s->fp != NULL and params_sz > s->vp - s->fp->end)) {
+  if (params_sz > s->vp - s->stack ||
+      (s->fp != NULL && params_sz > s->vp - s->fp->end)) {
     failure("not enough parameters in stack");
   }
-  size_t frame_sz_in_ptr = sizeof(Frame) / sizeof(void *);
+  size_t frame_sz_in_ptr = sizeof(struct Frame) / sizeof(void *);
   struct Frame frame = {
       .ret = NULL, // field in frame itself
       .rp = s->ip,
@@ -225,7 +232,7 @@ inline void s_enter_f(struct State *s, char *func_ip, size_t params_sz,
   };
 
   // put frame on stack
-  s->fp = (Frame *)s->vp;
+  s->fp = (struct Frame *)s->vp;
   (*s->fp) = frame;
 
   // update stack pointer
@@ -261,7 +268,7 @@ inline void s_exit_f(struct State *s) {
 
 inline union VarT **var_by_category(struct State *s, enum VarCategory category,
                                     int id) {
-  VarT **var = NULL;
+  union VarT **var = NULL;
   switch (category) {
   case VAR_GLOBAL:
     // TODO: FIXME
@@ -277,7 +284,7 @@ inline union VarT **var_by_category(struct State *s, enum VarCategory category,
       failure("can't read local: too big id, %i >= %ul", frame_locals_sz(s->fp),
               id);
     }
-    var = (VarT **)&s->fp->locals[id];
+    var = (union VarT **)&s->fp->locals[id];
     break;
   case VAR_A:
     // TODO

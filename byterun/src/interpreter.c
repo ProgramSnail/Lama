@@ -1,9 +1,9 @@
-#include "../include/interpreter.h"
-#include "../include/types.h"
-#include "../include/builtin.h"
-#include "../include/operations.h"
-#include "../../runtime/runtime.h"
-#include "../../runtime/gc.h"
+#include "interpreter.h"
+#include "types.h"
+#include "builtin.h"
+#include "operations.h"
+#include "runtime.h"
+#include "gc.h"
 
 int ip_read_int(char** ip) {
   *ip += sizeof(int);

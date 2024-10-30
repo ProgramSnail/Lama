@@ -22,8 +22,6 @@ inline void f_length(struct State *s) {
 
   if (type == ARRAY_T || type == STR_T) {
     s_put_i(s, dh_param(x->array.data_header));
-  } else if (type == CONST_STR_T) {
-    s_put_i(s, strlen(x->const_str.value));
   } else if (type == STR_T) {
     s_put_i(s, strlen(x->str.value));
   } else { // TODO: lists ??
@@ -38,8 +36,10 @@ inline size_t str_sz(union VarT *var) {
     return strlen("<nil>");
   case INT_T: // int
     return snprintf(nullptr, 0, "%d", var->int_t.value);
-  case CONST_STR_T: // "str"
-    return strlen(var->const_str.value);
+  case BOX_T: // "<box>:..."
+    return strlen("<box>") + (var->box.value != NULL
+                                  ? str_sz((union VarT *)&var->box.value) + 1
+                                  : 0);
   case STR_T: // "str"
     return strlen(var->str.value);
   case CLOJURE_T: // <clojure> // TODO
@@ -49,7 +49,7 @@ inline size_t str_sz(union VarT *var) {
     size_t sz = 0;
     if (var->array.values != NULL) {
       for (size_t i = 0; i < dh_param(var->array.data_header); ++i) {
-        sz += str_sz((VarT *)var->array.values[i]) + 1;
+        sz += str_sz((union VarT *)var->array.values[i]) + 1;
       }
       --sz; // extra space
     }
@@ -58,11 +58,11 @@ inline size_t str_sz(union VarT *var) {
   case SEXP_T: { // tag:{a_1 a_2 ...}
     size_t sz = 0;
     if (var->sexp.tag != NULL) {
-      sz += strlen(var->sexp.tag) + 1 // tag and ':'
+      sz += strlen(var->sexp.tag) + 1; // tag and ':'
     }
     if (var->sexp.values != NULL) {
       for (size_t i = 0; i < dh_param(var->sexp.data_header); ++i) {
-        sz += str_sz((VarT *)var->sexp.values[i]) + 1;
+        sz += str_sz((union VarT *)var->sexp.values[i]) + 1;
       }
       --sz; // extra space
     }
@@ -83,10 +83,13 @@ inline char *to_str(union VarT *var, char *str, size_t max_sz) {
   case INT_T:
     snprintf(str, max_sz, "%d", var->int_t.value);
     break;
-  case CONST_STR_T:
-    strcat(str, "\"");
-    strcat(str, var->const_str.value);
-    strcat(str, "\"");
+  case BOX_T:
+    strcat(str, "<box>");
+    if (var->box.value != NULL) {
+      strcat(str, ":");
+      str += strlen(str);
+      str = to_str((union VarT *)&var->box.value, str, max_sz);
+    }
     break;
   case STR_T:
     strcat(str, "\"");
@@ -100,7 +103,7 @@ inline char *to_str(union VarT *var, char *str, size_t max_sz) {
     strcat(str, "[");
     ++str;
     for (size_t i = 0; i < dh_param(var->array.data_header); ++i) {
-      str = to_str((VarT *)var->array.values[i], str, max_sz);
+      str = to_str((union VarT *)var->array.values[i], str, max_sz);
       strcat(str, " ");
       ++str;
     }
@@ -114,7 +117,7 @@ inline char *to_str(union VarT *var, char *str, size_t max_sz) {
     strcat(str, "{");
     str += strlen(str);
     for (size_t i = 0; i < dh_param(var->sexp.data_header); ++i) {
-      str = to_str((VarT *)var->sexp.values[i], str, max_sz);
+      str = to_str((union VarT *)var->sexp.values[i], str, max_sz);
       strcat(str, " ");
       ++str;
     }
@@ -161,7 +164,7 @@ inline void f_binop(struct State *s, const char *opr) {
     z = x - y;
     break;
   case '*':
-    z - x *y;
+    z = x * y;
     break;
   case '/':
     if (y == 0) {

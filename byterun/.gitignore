@@ -1,1 +1,10 @@
 /byterun.exe
+
+build/
+.xmake/
+.cache/
+
+compile_commands.json
+
+*.a
+*.o
