@@ -1,9 +1,12 @@
 #include "interpreter.h"
+
+#include "../../runtime/runtime.h"
+#include "../../runtime/gc.h"
+
+#include "utils.h"
 #include "types.h"
-#include "builtin.h"
-#include "operations.h"
-#include "runtime.h"
-#include "gc.h"
+#include "stack.h"
+#include "runtime_externs.h"
 
 int ip_read_int(char** ip) {
   *ip += sizeof(int);
@@ -25,6 +28,21 @@ void run(bytefile *bf) {
 
   const size_t OPS_SIZE = 13;
   const char *ops [] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
+  int(*ops_func[])(void*, void*) = {
+    &Ls__Infix_43, // +
+    &Ls__Infix_45, // -
+    &Ls__Infix_42, // *
+    &Ls__Infix_47, // /
+    &Ls__Infix_37, // %
+    &Ls__Infix_60, // <
+    &Ls__Infix_6061, // <=
+    &Ls__Infix_62, // >
+    &Ls__Infix_6261, // >=
+    &Ls__Infix_6161, // ==
+    &Ls__Infix_3361, // !=
+    &Ls__Infix_3838, // &&
+    &Ls__Infix_3333, // !!
+  };
 
   const size_t PATS_SIZE = 7;
   const char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
@@ -266,5 +284,5 @@ void run(bytefile *bf) {
   }
   while (1);
 stop:;
-  destruct_state(&s);
+  cleanup_state(&s);
 }

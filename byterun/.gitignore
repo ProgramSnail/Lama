@@ -5,6 +5,7 @@ build/
 .cache/
 
 compile_commands.json
-
+.cache/
 *.a
 *.o
+byterun

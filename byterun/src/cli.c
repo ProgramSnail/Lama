@@ -1,6 +1,7 @@
 #include "interpreter.h"
 #include "parser.h"
-#include "runtime.h"
+#include "utils.h"
+#include "../../runtime/runtime.h"
 
 int main(int argc, char** argv) {
   if (argc < 2) {
@@ -11,7 +12,7 @@ int main(int argc, char** argv) {
   }
 
   
-  bytefile *f = read_file (argv[1]);
+  bytefile *f = read_file(argv[1]);
   run(f);
 //   dump_file (stdout, f);
 

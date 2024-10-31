@@ -1,7 +1,7 @@
 #pragma once
 
+#include "../../runtime/runtime.h"
 #include "parser.h"
-#include "runtime.h"
 #include <stdint.h>
 
 // ------ Var ------
@@ -52,7 +52,7 @@ struct ArrayT {
   uint32_t data_header;
   struct NilT **values;
 };
-const size_t MAX_ARRAY_SIZE = 0x11111110;
+static const size_t MAX_ARRAY_SIZE = 0x11111110;
 
 struct SExpT {
   uint32_t data_header;
@@ -78,17 +78,20 @@ union VarT {
 };
 
 // same to TAG in runtime
-inline enum Type dh_type(int data_header) {
+static inline enum Type dh_type(int data_header) {
   return (enum Type)(data_header & 0x00000007);
 }
 
 // same to LEN in runtime
-inline int dh_param(int data_header) { return (data_header & 0xFFFFFFF8) >> 3; }
+static inline int dh_param(int data_header) {
+  return (data_header & 0xFFFFFFF8) >> 3;
+}
 
-inline union VarT *to_var(struct NilT *var) { return (union VarT *)var; }
+static inline union VarT *to_var(struct NilT *var) { return (union VarT *)var; }
 
 // ------ Frame ------
 
+// TODO: store boxed offsets instead
 struct Frame {
   struct NilT *ret;      // store returned value
   char *rp;              // ret instruction pointer
@@ -98,10 +101,10 @@ struct Frame {
   void **end;            // store locals
 };
 
-inline uint64_t frame_locals_sz(struct Frame *frame) {
+static inline uint64_t frame_locals_sz(struct Frame *frame) {
   return frame->locals - frame->params;
 }
-inline uint64_t frame_params_sz(struct Frame *frame) {
+static inline uint64_t frame_params_sz(struct Frame *frame) {
   return frame->end - frame->locals;
 }
 
@@ -114,7 +117,7 @@ union StackValue {
   char *addr;
 };
 
-// inline StackValue *to_sv(void *var) { return (StackValue *)var; }
+// static inline StackValue *to_sv(void *var) { return (StackValue *)var; }
 
 struct State {
   void **stack;     // vaid**
@@ -126,18 +129,18 @@ struct State {
 };
 
 struct State init_state(bytefile *bf);
-void destruct_state(struct State *state);
+void cleanup_state(struct State *state);
 
 // ------ VarCategory ------
 
 enum VarCategory {
   VAR_GLOBAL = 0,
   VAR_LOCAL = 1,
-  VAR_A = 2, // TODO: ??
-  VAR_C = 3  // TODO: ??
+  VAR_ARGUMENT = 2,
+  VAR_C = 3 // TODO: constant ??
 };
 
-inline enum VarCategory to_var_category(uint8_t category) {
+static inline enum VarCategory to_var_category(uint8_t category) {
   if (category > 3) {
     failure("unexpected variable category");
   }

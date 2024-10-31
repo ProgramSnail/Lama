@@ -4,27 +4,13 @@
 #include <errno.h>
 #include <malloc.h>
 
-#include "runtime.h"
+#include "../../runtime/runtime.h"
 
+#include "utils.h"
 #include "parser.h"
 
 void *__start_custom_data;
 void *__stop_custom_data;
-
-/* Gets a string from a string table by an index */
-char* get_string (bytefile *f, int pos) {
-  return &f->string_ptr[pos];
-}
-
-/* Gets a name for a public symbol */
-char* get_public_name (bytefile *f, int i) {
-  return get_string (f, f->public_ptr[i*2]);
-}
-
-/* Gets an offset for a publie symbol */
-int get_public_offset (bytefile *f, int i) {
-  return f->public_ptr[i*2+1];
-}
 
 /* Reads a binary bytecode file by name and unpacks it */
 bytefile* read_file (char *fname) {
