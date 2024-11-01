@@ -4,6 +4,19 @@
 
 extern size_t STACK_SIZE;
 
+extern size_t __gc_stack_top, __gc_stack_bottom;
+
+#define PRE_GC()                                                                                   \
+  bool flag = false;                                                                               \
+  flag      = __gc_stack_top == 0;                                                                 \
+  if (flag) { __gc_stack_top = (size_t)__builtin_frame_address(0); }                               \
+  assert(__gc_stack_top != 0);                                                                     \
+  assert(__builtin_frame_address(0) <= (void *)__gc_stack_top);
+
+#define POST_GC()                                                                                  \
+  assert(__builtin_frame_address(0) <= (void *)__gc_stack_top);                                    \
+  if (flag) { __gc_stack_top = 0; }
+
 // ------ basic stack oprs ------
 
 void s_push(struct State *s, void *val) {
@@ -134,3 +147,5 @@ void **var_by_category(struct State *s, enum VarCategory category,
 
   return var;
 }
+
+// --- changed runtime operations ---

@@ -31,3 +31,7 @@ void s_enter_f(struct State *s, char *func_ip, size_t params_sz,
 void s_exit_f(struct State *s);
 
 void **var_by_category(struct State *s, enum VarCategory category, int id);
+
+// --- changed runtime operations ---
+
+void *s_Bsexp(struct State *state, int bn, int tag);

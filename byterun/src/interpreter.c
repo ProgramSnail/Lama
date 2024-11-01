@@ -67,17 +67,19 @@ void run(bytefile *bf) {
       if (l < 1) {
         failure("BINOP: l < 1");
       }
-      f_binop(&s, ops[l-1]);
+      void* left = s_pop(&s);
+      void* right = s_pop(&s);
+      s_push(&s, (void*)ops_func[l-1](left, right));
       break;
       
     case 1:
       switch (l) {
       case  0: // CONST %d
-        s_put_i(&s, ip_read_int(&s.ip));
+        s_push(&s, (void*)BOX(ip_read_int(&s.ip)));
         break;
         
       case  1: // STRING %s
-        s_put_const_str(&s, ip_read_string(&s.ip, bf));
+        s_push(&s, Bstring((void*)ip_read_string(&s.ip, bf)));
         break;
           
       case  2: // SEXP %s %d // create sexpr with tag=%s and %d elements from stack

@@ -20,7 +20,7 @@ void **f_prev_fp(struct Frame *fp) {
 uint64_t f_locals_sz(struct Frame *fp) { return UNBOX(fp->locals_sz_box); }
 uint64_t f_args_sz(struct Frame *fp) { return UNBOX(fp->args_sz_box); }
 void **f_locals(struct Frame *fp) { return (void **)fp - f_locals_sz(fp) - frame_sz(); }
-void **f_args(struct Frame *fp) { return (void **)fp + f_args_sz(fp); }
+void **f_args(struct Frame *fp) { return (void **)fp + 1; }
 
 
 // --- State ---

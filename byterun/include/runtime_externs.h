@@ -84,7 +84,7 @@ struct re_pattern_buffer *Lregexp(char *regexp);
 
 int LregexpMatch(struct re_pattern_buffer *b, char *s, int pos);
 
-void *Bstring(void *);
+void *Bstring(void *p);
 
 void *Lclone(void *p);
 
