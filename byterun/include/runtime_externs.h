@@ -1,3 +1,5 @@
+#pragma once
+
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
@@ -16,126 +18,123 @@
 
 // ---
 
-void *Bsexp(int n, ...);
-int LtagHash(char *);
+void Lassert(void *f, char *s, ...);
 
 // Gets a raw data_header
-int LkindOf(void *p);
+aint LkindOf(void *p);
 
 // Compare s-exprs tags
-int LcompareTags(void *p, void *q);
+aint LcompareTags(void *p, void *q);
 
 // Functional synonym for built-in operator ":";
 void *Ls__Infix_58(void *p, void *q);
 
 // Functional synonym for built-in operator "!!";
-int Ls__Infix_3333(void *p, void *q);
+aint Ls__Infix_3333(void *p, void *q);
 
 // Functional synonym for built-in operator "&&";
-int Ls__Infix_3838(void *p, void *q);
+aint Ls__Infix_3838(void *p, void *q);
 
 // Functional synonym for built-in operator "==";
-int Ls__Infix_6161(void *p, void *q);
+aint Ls__Infix_6161(void *p, void *q);
 
 // Functional synonym for built-in operator "!=";
-int Ls__Infix_3361(void *p, void *q);
+aint Ls__Infix_3361(void *p, void *q);
 
 // Functional synonym for built-in operator "<=";
-int Ls__Infix_6061(void *p, void *q);
+aint Ls__Infix_6061(void *p, void *q);
 
 // Functional synonym for built-in operator "<";
-int Ls__Infix_60(void *p, void *q);
+aint Ls__Infix_60(void *p, void *q);
 
 // Functional synonym for built-in operator ">=";
-int Ls__Infix_6261(void *p, void *q);
+aint Ls__Infix_6261(void *p, void *q);
 
 // Functional synonym for built-in operator ">";
-int Ls__Infix_62(void *p, void *q);
+aint Ls__Infix_62(void *p, void *q);
 
 // Functional synonym for built-in operator "+";
-int Ls__Infix_43(void *p, void *q);
+aint Ls__Infix_43(void *p, void *q);
 
 // Functional synonym for built-in operator "-";
-int Ls__Infix_45(void *p, void *q);
+aint Ls__Infix_45(void *p, void *q);
 
 // Functional synonym for built-in operator "*";
-int Ls__Infix_42(void *p, void *q);
+aint Ls__Infix_42(void *p, void *q);
 
 // Functional synonym for built-in operator "/";
-int Ls__Infix_47(void *p, void *q);
+aint Ls__Infix_47(void *p, void *q);
 
 // Functional synonym for built-in operator "%";
-int Ls__Infix_37(void *p, void *q);
+aint Ls__Infix_37(void *p, void *q);
 
-int Llength(void *p);
+aint Llength(void *p);
 
-int LtagHash(char *s);
-char *de_hash(int n);
+aint LtagHash(char *s);
+char *de_hash(aint n);
 
-int Luppercase(void *v);
+aint Luppercase(void *v);
 
-int Llowercase(void *v);
+aint Llowercase(void *v);
 
-int LmatchSubString(char *subj, char *patt, int pos);
+aint LmatchSubString(char *subj, char *patt, aint pos);
 
-void *Lsubstring(void *subj, int p, int l);
+void *Lsubstring(aint *args /*void *subj, aint p, aint l*/);
 
-struct re_pattern_buffer *Lregexp(char *regexp);
+regex_t *Lregexp(char *regexp);
 
-int LregexpMatch(struct re_pattern_buffer *b, char *s, int pos);
-
-void *Bstring(void *p);
+aint LregexpMatch(struct re_pattern_buffer *b, char *s, aint pos);
 
 void *Lclone(void *p);
 
-int inner_hash(int depth, unsigned acc, void *p);
+aint inner_hash(aint depth, auint acc, void *p);
 
 void *LstringInt(char *b);
 
-int Lhash(void *p);
+aint Lhash(void *p);
 
-int LflatCompare(void *p, void *q);
-int Lcompare(void *p, void *q);
+aint LflatCompare(void *p, void *q);
+aint Lcompare(void *p, void *q);
 
-void *Belem(void *p, int i);
+void *Belem(void *p, aint i);
 
-void *LmakeArray(int length);
-void *LmakeString(int length);
+void *LmakeArray(aint length);
+void *LmakeString(aint length);
 
-void *Bstring(void *p);
-void *Lstringcat(void *p);
-void *Lstring(void *p);
+void *Bstring(aint *args /*void *p*/);
+void *Lstringcat(aint *args /* void* p */);
+void *Lstring(aint *args /* void *p */);
 
-void *Bclosure(int bn, void *entry, ...);
-void *Barray(int bn, ...);
-void *Bsexp(int bn, ...);
-int Btag(void *d, int t, int n);
+void *Bclosure(aint *args, aint bn);
+void *Barray(aint *args, aint bn);
+void *Bsexp(aint *args, aint bn);
+aint Btag(void *d, aint t, aint n);
 
-int get_tag(data *d);
-int get_len(data *d);
+aint get_tag(data *d);
+aint get_len(data *d);
 
-int Barray_patt(void *d, int n);
-int Bstring_patt(void *x, void *y);
-int Bclosure_tag_patt(void *x);
-int Bboxed_patt(void *x);
-int Bunboxed_patt(void *x);
-int Barray_tag_patt(void *x);
-int Bstring_tag_patt(void *x);
-int Bsexp_tag_patt(void *x);
+aint Barray_patt(void *d, aint n);
+aint Bstring_patt(void *x, void *y);
+aint Bclosure_tag_patt(void *x);
+aint Bboxed_patt(void *x);
+aint Bunboxed_patt(void *x);
+aint Barray_tag_patt(void *x);
+aint Bstring_tag_patt(void *x);
+aint Bsexp_tag_patt(void *x);
 
-void *Bsta(void *v, int i, void *x);
+void *Bsta(void *v, aint i, void *x);
 
 void Lfailure(char *s, ...);
 void LprintfPerror(char *s, ...);
 
-void Bmatch_failure(void *v, char *fname, int line, int col);
+void Bmatch_failure(void *v, char *fname, aint line, aint col);
 
 void * /*Lstrcat*/ Li__Infix_4343(void *a, void *b);
 
 void *Lsprintf(char *fmt, ...);
 void *LgetEnv(char *var);
 
-int Lsystem(char *cmd);
+aint Lsystem(char *cmd);
 
 void Lfprintf(FILE *f, char *s, ...);
 void Lprintf(char *s, ...);
@@ -152,17 +151,17 @@ void *Lhd(void *v);
 void *Ltl(void *v);
 
 /* Lread is an implementation of the "read" construct */
-int Lread();
+aint Lread();
 
-int Lbinoperror(void);
+aint Lbinoperror(void);
 
-int Lbinoperror2(void);
+aint Lbinoperror2(void);
 
 /* Lwrite is an implementation of the "write" construct */
-int Lwrite(int n);
+aint Lwrite(aint n);
 
-int Lrandom(int n);
+aint Lrandom(aint n);
 
-int Ltime();
+aint Ltime();
 
-void set_args(int argc, char *argv[]);
+void set_args(aint argc, char *argv[]);

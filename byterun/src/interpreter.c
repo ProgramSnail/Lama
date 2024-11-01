@@ -8,6 +8,8 @@
 #include "stack.h"
 #include "runtime_externs.h"
 
+extern size_t STACK_SIZE;
+
 int ip_read_int(char** ip) {
   *ip += sizeof(int);
   return *(int*)((*ip) - sizeof(int));
@@ -28,7 +30,7 @@ void run(bytefile *bf) {
 
   const size_t OPS_SIZE = 13;
   const char *ops [] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
-  int(*ops_func[])(void*, void*) = {
+  aint(*ops_func[])(void*, void*) = {
     &Ls__Infix_43, // +
     &Ls__Infix_45, // -
     &Ls__Infix_42, // *
@@ -75,16 +77,19 @@ void run(bytefile *bf) {
     case 1:
       switch (l) {
       case  0: // CONST %d
-        s_push(&s, (void*)BOX(ip_read_int(&s.ip)));
+        s_push_i(&s, BOX(ip_read_int(&s.ip)));
         break;
         
-      case  1: // STRING %s
-        s_push(&s, Bstring((void*)ip_read_string(&s.ip, bf)));
+      case  1: { // STRING %s
+        void* str = ip_read_string(&s.ip, bf);
+        s_push(&s, Bstring((aint*)&str));
         break;
+      }
           
       case  2: // SEXP %s %d // create sexpr with tag=%s and %d elements from stack
         // params read from stack
-        s_put_sexp(&s, ip_read_string(&s.ip, bf), ip_read_int(&s.ip));
+        s_push_i(&s, LtagHash(ip_read_string(&s.ip, bf)));
+        Bsexp((aint*)s.sp, ip_read_int(&s.ip)); // TODO: check order
         break;
         
       case  3: // STI
@@ -108,12 +113,12 @@ void run(bytefile *bf) {
         break;
         
       case  8: // DROP
-        s_drop_var(&s);
+        s_pop(&s);
         break;
         
       case  9: // DUP
-        { // guess
-          if (s.sp == s.stack || (s.fp != NULL && s.sp == s.fp->end)) {
+        {
+          if (s.sp == s.stack + STACK_SIZE || (s.fp != NULL && s.sp == f_locals(s.fp))) {
             failure("can't DUP: no value on stack");
           }
           *s.sp = *(s.sp - 1);
@@ -123,32 +128,22 @@ void run(bytefile *bf) {
 
       case 10: // SWAP
         { // guess
-          struct NilT* v = *s.sp;
-          *s.sp = *(s.sp - 1);
-          *(s.sp - 1) = v;
+          if (s.sp + 1 >= s.stack + STACK_SIZE || (s.fp != NULL && s.sp + 1 >= f_locals(s.fp))) {
+            failure("can't SWAP: < 2 values on stack");
+          }
+          void* v = *s.sp;
+          push_extra_root(v);
+          *s.sp = *(s.sp + 1);
+          *(s.sp + 1) = v;
+          pop_extra_root(v);
         }
         break;
 
       case 11: // ELEM
         {
-          union VarT* array = s_take_var(&s);
-          union VarT* index = s_take_var(&s);
-          if (dh_type(array->nil.data_header) != ARRAY_T) {
-            failure("ELEM: elem, previous element is not array");
-          }
-          if (dh_type(index->nil.data_header) != INT_T) {
-            failure("ELEM: elem, last element is not int");
-          }
-          if (index->int_t.value < 0) {
-            failure("ELEM: can't access by index < 0");
-          }
-          if (index->int_t.value >= dh_param(array->array.data_header)) {
-            failure("ELEM: array index is out of range");
-          }
-          s_put_var(&s, array->array.values[index->int_t.value]);
-
-          free_var_ptr(array);
-          free_var_ptr(index);
+          void* array = s_pop(&s);
+          aint index = s_pop_i(&s);
+          s_push(&s, Belem(array, index));
         }
         break;
         
@@ -159,34 +154,34 @@ void run(bytefile *bf) {
       
     case 2: { // LD %d
       int8_t category = ip_read_byte(&s.ip);
-      union VarT** var_ptr = var_by_category(&s, to_var_category(category), ip_read_int(&s.ip));
-      s_put_var(&s, (struct NilT*)*var_ptr); // TODO: check
+      void** var_ptr = var_by_category(&s, to_var_category(category), ip_read_int(&s.ip));
+      s_push(&s, *var_ptr);
       break;
     }
     case 3: { // LDA %d
       int8_t category = ip_read_byte(&s.ip);
-      union VarT** var_ptr = var_by_category(&s, to_var_category(category), ip_read_int(&s.ip));
+      void** var_ptr = var_by_category(&s, to_var_category(category), ip_read_int(&s.ip));
       // TODO
       break;
     }
     case 4: { // ST %d
       int8_t category = ip_read_byte(&s.ip);
-      union VarT** var_ptr = var_by_category(&s, to_var_category(category), ip_read_int(&s.ip));
-      *var_ptr = s_take_var(&s); // TODO: check
+      void** var_ptr = var_by_category(&s, to_var_category(category), ip_read_int(&s.ip));
+      *var_ptr = s_pop(&s);
       break;
     }
     case 5:
       switch (l) {
       case  0: { // CJMPz 0x%.8x
         char* new_ip = (char*)(long)ip_read_int(&s.ip); // TODO: check
-        if (s_take_i(&s) != 0) {
+        if (s_pop_i(&s) != UNBOX(0)) {
           s.ip = new_ip;
         }
         break;
       }
       case 1: { // CJMPnz  0x%.8x
         char* new_ip = (char*)(long)ip_read_int(&s.ip); // TODO: check
-        if (s_take_i(&s) == 0) {
+        if (s_pop_i(&s) == UNBOX(0)) {
           s.ip = new_ip;
         }
         break;
@@ -200,6 +195,7 @@ void run(bytefile *bf) {
         break;
         
       case  4: // CLOSURE 0x%.8x
+        // TODO
         {
           int n = ip_read_int(&s.ip);
           for (int i = 0; i < n; i++) {
@@ -226,14 +222,14 @@ void run(bytefile *bf) {
         break;
         
       case  7: // TAG %s
-        // TODO: ??
+        s_push_i(&s, LtagHash(ip_read_string(&s.ip, bf))); // TODO: check
         break;
         
       case  8: // ARRAY %d
-        s_put_array(&s, ip_read_int(&s.ip));
+        Barray((aint*)s.sp, ip_read_int(&s.ip));
         break;
         
-      case  9: // FAIL %d %d
+      case  9: // FAIL %d %d // TODO
         failure("[FAIL]: %d-%d\n", ip_read_int(&s.ip), ip_read_int(&s.ip));
         break;
         
@@ -247,30 +243,62 @@ void run(bytefile *bf) {
       break;
       
     case 6: // PATT pats[l]
-      // TODO: JMP if same to pattern ??
+      // {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"}
+      switch (l) {
+      case 0: // =str
+        s_push_i(&s, Bstring_patt(s_pop(&s), s_pop(&s))); // TODO: order
+        break;
+      case 1: // #string
+        s_push_i(&s, Bstring_tag_patt(s_pop(&s)));
+        break;
+      case 2: // #array
+        s_push_i(&s, Barray_tag_patt(s_pop(&s)));
+        break;
+      case 3: // #sexp
+        s_push_i(&s, Bsexp_tag_patt(s_pop(&s)));
+        break;
+      case 4: // #ref
+        // TODO
+        break;
+      case 5: // #val
+        // TODO
+        break;
+      case 6: // #fun
+        s_push_i(&s, Bclosure_tag_patt(s_pop(&s)));
+        break;
+      default:
+        failure("invalid opcode %d-%d\n", h, l);
+      }
       break;
 
     case 7: {
       switch (l) {
       case 0: // CALL Lread
-        f_read(&s);
+        s_push_i(&s, Lread());
         break;
         
       case 1: // CALL Lwrite
-        f_write(&s);
+        Lwrite(s_pop_i(&s));
         break;
 
       case 2: // CALL Llength
-        f_length(&s);
+        s_push_i(&s, Llength(s_pop(&s)));
         break;
 
-      case 3: // CALL Lstring
-        f_string(&s);
+      case 3: { // CALL Lstring
+        void* str = Lstring((aint*)s.sp);
+        s_pop(&s);
+        s_push(&s, str);
         break;
+      }
 
-      case 4: // CALL Barray %d
-        f_array(&s, ip_read_int(&s.ip));
+      case 4: { // CALL Barray %d
+        size_t n = ip_read_int(&s.ip);
+        void* array = Barray((aint*)s.sp, n); // TODO: are elems added (?)
+        s_popn(&s, n);
+        s_push(&s, array);
         break;
+      }
 
       default:
         failure("invalid opcode %d-%d\n", h, l);

@@ -11,6 +11,7 @@ extern size_t __gc_stack_top, __gc_stack_bottom;
   flag      = __gc_stack_top == 0;                                                                 \
   if (flag) { __gc_stack_top = (size_t)__builtin_frame_address(0); }                               \
   assert(__gc_stack_top != 0);                                                                     \
+  assert((__gc_stack_top & 0xF) == 0);                                                             \
   assert(__builtin_frame_address(0) <= (void *)__gc_stack_top);
 
 #define POST_GC()                                                                                  \
@@ -25,6 +26,10 @@ void s_push(struct State *s, void *val) {
   }
   --s->sp;
   *s->sp = val;
+}
+
+void s_push_i(struct State *s, aint val) {
+  s_push(s, (void*)val);
 }
 
 void s_push_nil(struct State *s) {
@@ -48,6 +53,10 @@ void* s_pop(struct State *s) {
   return value;
 }
 
+aint s_pop_i(struct State *s) {
+  return (aint)s_pop(s);
+}
+
 void s_popn(struct State *s, size_t n) {
   for (size_t i = 0; i < n; ++i) {
     s_pop(s);
@@ -56,10 +65,10 @@ void s_popn(struct State *s, size_t n) {
 
 // ------ functions ------
 
-void s_enter_f(struct State *s, char *func_ip, size_t args_sz,
-                             size_t locals_sz) {
+void s_enter_f(struct State *s, char *func_ip, auint args_sz,
+                             auint locals_sz) {
   // check that params count is valid
-  if (args_sz > s->sp + STACK_SIZE - s->stack ||
+  if (s->sp + (aint)args_sz - 1 >= s->stack + STACK_SIZE ||
       (s->fp != NULL && args_sz > s->sp + STACK_SIZE - f_locals(s->fp))) {
     failure("not enough parameters in stack");
   }
@@ -147,5 +156,3 @@ void **var_by_category(struct State *s, enum VarCategory category,
 
   return var;
 }
-
-// --- changed runtime operations ---

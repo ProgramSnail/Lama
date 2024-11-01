@@ -16,23 +16,21 @@ enum Type {
 
 static const size_t MAX_ARRAY_SIZE = 0x11111110;
 
-static inline union VarT *to_var(struct NilT *var) { return (union VarT *)var; }
-
 // ------ Frame ------
 
 struct Frame {
   void *ret;             // store returned value [gc pointer]
   char *rp;              // ret instruction pointer [not gc pointer]
-  size_t to_prev_fp_box; // ret function frame pointer [boxed value, not gc
+  aint to_prev_fp_box; // ret function frame pointer [boxed value, not gc
                          // pointer]
-  size_t args_sz_box;    // store arguments [boxed value, not gc pointer]
-  size_t locals_sz_box;  // store locals [boxed value, not gc pointer]
+  aint args_sz_box;    // store arguments [boxed value, not gc pointer]
+  aint locals_sz_box;  // store locals [boxed value, not gc pointer]
 };
 
-size_t frame_sz();
+auint frame_sz();
 void **f_prev_fp(struct Frame *fp);
-uint64_t f_locals_sz(struct Frame *fp);
-uint64_t f_args_sz(struct Frame *fp);
+auint f_locals_sz(struct Frame *fp);
+auint f_args_sz(struct Frame *fp);
 void **f_locals(struct Frame *fp);
 void **f_args(struct Frame *fp);
 
