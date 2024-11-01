@@ -111,19 +111,19 @@ void run(bytefile *bf) {
         
       case  9: // DUP
         { // guess
-          if (s.vp == s.stack || (s.fp != NULL && s.vp == s.fp->end)) {
+          if (s.sp == s.stack || (s.fp != NULL && s.sp == s.fp->end)) {
             failure("can't DUP: no value on stack");
           }
-          *s.vp = *(s.vp - 1);
-          ++s.vp;
+          *s.sp = *(s.sp - 1);
+          ++s.sp;
           break;
         }
 
       case 10: // SWAP
         { // guess
-          struct NilT* v = *s.vp;
-          *s.vp = *(s.vp - 1);
-          *(s.vp - 1) = v;
+          struct NilT* v = *s.sp;
+          *s.sp = *(s.sp - 1);
+          *(s.sp - 1) = v;
         }
         break;
 

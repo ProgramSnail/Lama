@@ -4,12 +4,14 @@
 
 extern size_t STACK_SIZE;
 
+// ------ basic stack oprs ------
+
 void s_push(struct State *s, void *val) {
-  if (s->vp == s->stack) {
+  if (s->sp == s->stack) {
     failure("stack overflow");
   }
-  --s->vp;
-  *s->vp = val;
+  --s->sp;
+  *s->sp = val;
 }
 
 void s_push_nil(struct State *s) {
@@ -23,12 +25,12 @@ void s_pushn_nil(struct State *s, size_t n) {
 }
 
 void* s_pop(struct State *s) {
-  if (s->vp == s->stack + STACK_SIZE || (s->fp != NULL && s->vp == s->fp->end)) {
+  if (s->sp == s->stack + STACK_SIZE || (s->fp != NULL && s->sp == f_locals(s->fp))) {
     failure("take: no var");
   }
-  void* value = *s->vp;
-  *s->vp = NULL;
-  ++s->vp;
+  void* value = *s->sp;
+  *s->sp = NULL;
+  ++s->sp;
 
   return value;
 }
@@ -41,70 +43,64 @@ void s_popn(struct State *s, size_t n) {
 
 // ------ functions ------
 
-// TODO
-// |> param_0 ... param_n | frame[ ret rp prev_fp &params &locals &end ]
-// |> local_0 ... local_m |> | ...
-//
-// where |> defines corresponding frame pointer, | is stack pointer location
-// before / after new frame added
-void s_enter_f(struct State *s, char *func_ip, size_t params_sz,
+void s_enter_f(struct State *s, char *func_ip, size_t args_sz,
                              size_t locals_sz) {
-  if (params_sz > s->vp - s->stack ||
-      (s->fp != NULL && params_sz > s->vp - s->fp->end)) {
+  // check that params count is valid
+  if (args_sz > s->sp + STACK_SIZE - s->stack ||
+      (s->fp != NULL && args_sz > s->sp + STACK_SIZE - f_locals(s->fp))) {
     failure("not enough parameters in stack");
   }
-  size_t frame_sz_in_ptr = sizeof(struct Frame) / sizeof(void *);
+
+  // create frame
   struct Frame frame = {
       .ret = NULL, // field in frame itself
       .rp = s->ip,
-      .prev_fp = s->fp,
-      .params = s->vp - params_sz,
-      .locals = s->vp + frame_sz_in_ptr,
-      .end = s->vp + frame_sz_in_ptr + locals_sz,
+      .to_prev_fp_box = BOX((void**)s->fp - s->sp),
+      .args_sz_box = BOX(args_sz),
+      .locals_sz_box = BOX(locals_sz),
   };
 
   // put frame on stack
-  s->fp = (struct Frame *)s->vp;
+  s_push_nil(s); // sp contains value
+  s->fp = (struct Frame *)s->sp;
+  s_pushn_nil(s, frame_sz() - 1);
   (*s->fp) = frame;
 
-  // update stack pointer
-  s->vp = frame.end;
+  s_pushn_nil(s, locals_sz);
 
   // go to function body
   s->ip = func_ip;
 }
 
-// TODO
 void s_exit_f(struct State *s) {
   if (s->fp == NULL) {
     failure("exit: no func");
   }
 
-  // drop stack entities and locals
-  s_popn(s, f_locals_sz(s->fp));
+  struct Frame frame = *s->fp;
+  push_extra_root((void **)&frame.ret);
 
-  // TODO: skip
+  // drop stack entities, locals, frame
+  s_popn(s, (void**)s->fp - s->sp + 1); // TODO:check +1
 
-  // drop params
-  s->vp = (void **)s->fp;
-  s_popn(s, f_args_sz(s->fp));
+  // drop args
+  s_popn(s, f_args_sz(&frame));
 
-  // s->vp = s->fp->params; // done automatically
+  // save returned value
+  s_push(s, frame.ret);
 
-  // save ret_val
-  s_push(s, s->fp->ret);
+  s->ip = frame.rp;
+  s->fp = (struct Frame*)f_prev_fp(&frame);
 
-  s->ip = s->fp->rp;
-  s->fp = s->fp->prev_fp;
+  pop_extra_root((void **)&frame.ret);
 }
 
-// TODO
-union VarT **var_by_category(struct State *s, enum VarCategory category,
+void **var_by_category(struct State *s, enum VarCategory category,
                              int id) {
   if (id < 0) {
     failure("can't read variable: negative id %i", id);
   }
-  union VarT **var = NULL;
+  void **var = NULL;
   switch (category) {
   case VAR_GLOBAL:
     // TODO: FIXME
@@ -113,11 +109,11 @@ union VarT **var_by_category(struct State *s, enum VarCategory category,
     if (s->fp == NULL) {
       failure("can't read local outside of function");
     }
-    if (frame_args_sz(s->fp) <= id) {
+    if (f_args_sz(s->fp) <= id) {
       failure("can't read local: too big id, %i >= %ul", f_locals_sz(s->fp),
               id);
     }
-    var = (union VarT **)&f_locals_at(s->fp, id);
+    var = &f_locals(s->fp)[id];
     break;
   case VAR_ARGUMENT:
     if (s->fp == NULL) {
@@ -127,12 +123,14 @@ union VarT **var_by_category(struct State *s, enum VarCategory category,
       failure("can't read arguments: too big id, %i >= %ul", f_args_sz(s->fp),
               id);
     }
-    var = (union VarT **)&f_args_at(s->fp, id);
+    var = &f_args(s->fp)[id]; // TODO: check if not reversed order
     break;
   case VAR_C:
     // TODO: ??
     break;
   }
+
+  // TODO: push extra root ??
 
   return var;
 }

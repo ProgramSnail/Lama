@@ -30,5 +30,4 @@ void s_enter_f(struct State *s, char *func_ip, size_t params_sz,
 
 void s_exit_f(struct State *s);
 
-union VarT **var_by_category(struct State *s, enum VarCategory category,
-                             int id);
+void **var_by_category(struct State *s, enum VarCategory category, int id);
