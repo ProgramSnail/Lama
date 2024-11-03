@@ -2,28 +2,41 @@
 
 #include "../../runtime/runtime.h"
 
-extern size_t STACK_SIZE;
-
 extern size_t __gc_stack_top, __gc_stack_bottom;
 
-#define PRE_GC()                                                                                   \
-  bool flag = false;                                                                               \
-  flag      = __gc_stack_top == 0;                                                                 \
-  if (flag) { __gc_stack_top = (size_t)__builtin_frame_address(0); }                               \
-  assert(__gc_stack_top != 0);                                                                     \
-  assert((__gc_stack_top & 0xF) == 0);                                                             \
-  assert(__builtin_frame_address(0) <= (void *)__gc_stack_top);
-
-#define POST_GC()                                                                                  \
-  assert(__builtin_frame_address(0) <= (void *)__gc_stack_top);                                    \
-  if (flag) { __gc_stack_top = 0; }
-
 // ------ basic stack oprs ------
+
+void** s_top(struct State* s) {
+  return s->stack + STACK_SIZE - s->bf->global_area_size;
+}
+
+bool s_is_empty(struct State* s) {
+  if (s->sp == s_top(s) || (s->fp != NULL && s->sp == f_locals(s->fp))) {
+    return true;
+  }
+  return false;
+}
+
+void** s_peek(struct State* s) {
+  if (s->sp == s_top(s)) {
+    failure("empty stack");
+  }
+  if (s->fp != NULL && s->sp == f_locals(s->fp)) {
+    failure("empty function stack");
+  }
+
+  return s->sp;
+}
+
+aint* s_peek_i(struct State* s) {
+  return (aint*)s_peek(s);
+}
 
 void s_push(struct State *s, void *val) {
   if (s->sp == s->stack) {
     failure("stack overflow");
   }
+  printf("--> push\n");
   --s->sp;
   *s->sp = val;
 }
@@ -43,9 +56,13 @@ void s_pushn_nil(struct State *s, size_t n) {
 }
 
 void* s_pop(struct State *s) {
-  if (s->sp == s->stack + STACK_SIZE || (s->fp != NULL && s->sp == f_locals(s->fp))) {
-    failure("take: no var");
+  if (s->sp == s_top(s)) {
+    failure("empty stack");
   }
+  if (s->fp != NULL && s->sp == f_locals(s->fp)) {
+    failure("empty function stack");
+  }
+  printf("--> pop\n");
   void* value = *s->sp;
   *s->sp = NULL;
   ++s->sp;
@@ -65,33 +82,35 @@ void s_popn(struct State *s, size_t n) {
 
 // ------ functions ------
 
-void s_enter_f(struct State *s, char *func_ip, auint args_sz,
-                             auint locals_sz) {
+void s_enter_f(struct State *s, char *rp, auint args_sz, auint locals_sz) {
+  printf("-> %i args sz\n", args_sz);
+  printf("-> %i locals sz\n", locals_sz);
+
   // check that params count is valid
-  if (s->sp + (aint)args_sz - 1 >= s->stack + STACK_SIZE ||
-      (s->fp != NULL && args_sz > s->sp + STACK_SIZE - f_locals(s->fp))) {
+  if (s->sp + (aint)args_sz - 1 >= s_top(s)) {
     failure("not enough parameters in stack");
   }
+  if (s->fp != NULL && s->sp + (aint)args_sz - 1 >= f_locals(s->fp)) {
+    failure("not enough parameters in function stack");
+  }
+
+  // s_push_nil(s); // sp contains value, frame starts with next value
+  s_pushn_nil(s, frame_sz());
 
   // create frame
   struct Frame frame = {
       .ret = NULL, // field in frame itself
-      .rp = s->ip,
-      .to_prev_fp_box = BOX((void**)s->fp - s->sp),
+      .rp = rp,
+      .prev_fp = (void**)s->fp,
       .args_sz_box = BOX(args_sz),
       .locals_sz_box = BOX(locals_sz),
   };
 
   // put frame on stack
-  s_push_nil(s); // sp contains value
   s->fp = (struct Frame *)s->sp;
-  s_pushn_nil(s, frame_sz() - 1);
   (*s->fp) = frame;
 
   s_pushn_nil(s, locals_sz);
-
-  // go to function body
-  s->ip = func_ip;
 }
 
 void s_exit_f(struct State *s) {
@@ -103,18 +122,31 @@ void s_exit_f(struct State *s) {
   push_extra_root((void **)&frame.ret);
 
   // drop stack entities, locals, frame
-  s_popn(s, (void**)s->fp - s->sp + 1); // TODO:check +1
+  size_t to_pop = f_args(s->fp) - s->sp;
+  s->fp = (struct Frame*)f_prev_fp(&frame);
+  printf("-> %zu to pop\n", to_pop);
+  s_popn(s, to_pop);
 
   // drop args
+  printf("-> + %zu to pop\n", f_args_sz(&frame));
   s_popn(s, f_args_sz(&frame));
 
-  // save returned value
-  s_push(s, frame.ret);
+  // save returned value, not in main
+  if (frame.prev_fp != 0) {
+    s_push(s, frame.ret);
+  }
 
   s->ip = frame.rp;
-  s->fp = (struct Frame*)f_prev_fp(&frame);
 
   pop_extra_root((void **)&frame.ret);
+}
+
+void print_stack(struct State* s) {
+  printf("stack (%i) is\n[", s->stack + STACK_SIZE - s->sp);
+  for (void** x = s->stack + STACK_SIZE - 1; x >= s->sp; --x) {
+    printf("%li ", (long)UNBOX(*x));
+  }
+  printf("]\n");
 }
 
 void **var_by_category(struct State *s, enum VarCategory category,
@@ -125,34 +157,35 @@ void **var_by_category(struct State *s, enum VarCategory category,
   void **var = NULL;
   switch (category) {
   case VAR_GLOBAL:
-    // TODO: FIXME
+    if (s->bf->global_area_size <= id) {
+      failure("can't read global: too big id, %i >= %ul", id, s->bf->global_area_size);
+    }
+    var = s->stack + STACK_SIZE - 1 - id;
     break;
   case VAR_LOCAL:
     if (s->fp == NULL) {
       failure("can't read local outside of function");
     }
-    if (f_args_sz(s->fp) <= id) {
-      failure("can't read local: too big id, %i >= %ul", f_locals_sz(s->fp),
-              id);
+    if (f_locals_sz(s->fp) <= id) {
+      failure("can't read local: too big id, %i >= %ul", id, f_locals_sz(s->fp));
     }
-    var = &f_locals(s->fp)[id];
+    printf("id is %i, local is %i, %i\n", id, UNBOX((auint)*((void**)f_locals(s->fp) + id)), f_locals(s->fp) - s->sp);
+    var = f_locals(s->fp) + (f_locals_sz(s->fp) - id - 1);
     break;
   case VAR_ARGUMENT:
     if (s->fp == NULL) {
       failure("can't read argument outside of function");
     }
     if (f_args_sz(s->fp) <= id) {
-      failure("can't read arguments: too big id, %i >= %ul", f_args_sz(s->fp),
-              id);
+      failure("can't read arguments: too big id, %i >= %ul", id, f_args_sz(s->fp));
     }
-    var = &f_args(s->fp)[id]; // TODO: check if not reversed order
+    printf("id is %i, arg is %i, %i\n", id, UNBOX((auint)*((void**)f_args(s->fp) + id)), f_args(s->fp) - s->sp);
+    var = f_args(s->fp) + (f_args_sz(s->fp) - id - 1); // TODO: check if not reversed order
     break;
-  case VAR_C:
+  case VAR_C: // clojure ??
     // TODO: ??
     break;
   }
-
-  // TODO: push extra root ??
 
   return var;
 }

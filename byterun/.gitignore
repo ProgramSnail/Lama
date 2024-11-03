@@ -5,6 +5,8 @@ build/
 .xmake/
 .cache/
 
+tst/
+
 compile_commands.json
 .cache/
 *.a

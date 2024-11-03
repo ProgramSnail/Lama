@@ -15,7 +15,6 @@ void *__stop_custom_data;
 /* Reads a binary bytecode file by name and unpacks it */
 bytefile* read_file (char *fname) {
   FILE *f = fopen (fname, "rb");
-  long size;
   bytefile *file;
 
   if (f == 0) {
@@ -26,7 +25,8 @@ bytefile* read_file (char *fname) {
     failure ("%s\n", strerror (errno));
   }
 
-  file = (bytefile*) malloc (sizeof(int)*4 + (size = ftell (f)));
+  long size = ftell (f);
+  file = (bytefile*) malloc (size + sizeof(void*) * 4);
 
   if (file == 0) {
     failure ("*** FAILURE: unable to allocate memory.\n");
@@ -43,7 +43,7 @@ bytefile* read_file (char *fname) {
   file->string_ptr  = &file->buffer [file->public_symbols_number * 2 * sizeof(int)];
   file->public_ptr  = (int*) file->buffer;
   file->code_ptr    = &file->string_ptr [file->stringtab_size];
-  file->global_ptr  = (int*) malloc (file->global_area_size * sizeof (int));
+  file->global_ptr  = (int*) calloc (file->global_area_size, sizeof (int));
   
   return file;
 }
@@ -256,7 +256,7 @@ void disassemble (FILE *f, bytefile *bf) {
 
 /* Dumps the contents of the file */
 void dump_file (FILE *f, bytefile *bf) {
-  int i;
+  size_t i;
   
   fprintf (f, "String table size       : %d\n", bf->stringtab_size);
   fprintf (f, "Global area size        : %d\n", bf->global_area_size);

@@ -7,24 +7,26 @@
 
 // ------ General ------
 
-enum Type {
-  STR_T = STRING_TAG,
-  ARRAY_T = ARRAY_TAG,
-  SEXP_T = SEXP_TAG,
-  CLOJURE_T = CLOSURE_TAG,
-};
+// enum Type {
+//   STR_T = STRING_TAG,
+//   ARRAY_T = ARRAY_TAG,
+//   SEXP_T = SEXP_TAG,
+//   CLOJURE_T = CLOSURE_TAG,
+// };
+
+#define STACK_SIZE 100000
 
 static const size_t MAX_ARRAY_SIZE = 0x11111110;
 
 // ------ Frame ------
 
 struct Frame {
-  void *ret;             // store returned value [gc pointer]
-  char *rp;              // ret instruction pointer [not gc pointer]
-  aint to_prev_fp_box; // ret function frame pointer [boxed value, not gc
-                         // pointer]
-  aint args_sz_box;    // store arguments [boxed value, not gc pointer]
-  aint locals_sz_box;  // store locals [boxed value, not gc pointer]
+  void *ret;          // store returned value [gc pointer]
+  char *rp;           // ret instruction pointer [not gc pointer]
+  void **prev_fp;     // ret function frame pointer [boxed value, not gc
+                      // pointer]
+  aint args_sz_box;   // store arguments [boxed value, not gc pointer]
+  aint locals_sz_box; // store locals [boxed value, not gc pointer]
 };
 
 auint frame_sz();
@@ -37,12 +39,13 @@ void **f_args(struct Frame *fp);
 // ------ State ------
 
 struct State {
-  void **stack;     // vaid**
+  void **stack;
   void **sp;        // stack pointer
   struct Frame *fp; // function frame pointer
+  bytefile *bf;
 
   char *ip;      // instruction pointer
-  char *prev_ip; // prev instruction pointer (to remember jmp locations)
+  char *call_ip; // prev instruction pointer (to remember jmp locations)
 };
 
 struct State init_state(bytefile *bf);
@@ -58,3 +61,5 @@ enum VarCategory {
 };
 
 enum VarCategory to_var_category(uint8_t category);
+
+void print_stack(struct State *s);

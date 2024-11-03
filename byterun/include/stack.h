@@ -7,6 +7,11 @@
 
 #include "stdlib.h"
 
+void **s_top(struct State *s);
+bool s_is_empty(struct State *s);
+void **s_peek(struct State *s);
+aint *s_peek_i(struct State *s);
+
 void s_push(struct State *s, void *val);
 void s_push_i(struct State *s, aint val);
 void s_push_nil(struct State *s);
@@ -24,8 +29,7 @@ void s_popn(struct State *s, size_t n);
 //
 // where |> defines corresponding frame pointer, | is stack pointer
 // location before / after new frame added
-void s_enter_f(struct State *s, char *func_ip, auint params_sz,
-               auint locals_sz);
+void s_enter_f(struct State *s, char *rp, auint args_sz, auint locals_sz);
 
 void s_exit_f(struct State *s);
 

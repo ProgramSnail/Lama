@@ -1,6 +1,10 @@
 #pragma once
 
 #include <stdarg.h>
+#include <stdint.h>
+#include <stdio.h>
+
+#include "../../runtime/runtime_common.h"
 
 /* The unpacked representation of bytecode file */
 typedef struct {
@@ -15,12 +19,12 @@ typedef struct {
 } bytefile;
 
 /* Gets a string from a string table by an index */
-char *get_string(bytefile *f, int pos);
+char *get_string(bytefile *f, size_t pos);
 
 /* Gets a name for a public symbol */
-char *get_public_name(bytefile *f, int i);
+char *get_public_name(bytefile *f, size_t i);
 
 /* Gets an offset for a public symbol */
-int get_public_offset(bytefile *f, int i);
+size_t get_public_offset(bytefile *f, size_t i);
 
 // ---

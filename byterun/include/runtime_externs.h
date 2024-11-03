@@ -99,9 +99,9 @@ void *Belem(void *p, aint i);
 void *LmakeArray(aint length);
 void *LmakeString(aint length);
 
-void *Bstring(aint *args /*void *p*/);
-void *Lstringcat(aint *args /* void* p */);
-void *Lstring(aint *args /* void *p */);
+void *Bstring(aint *p);
+void *Lstringcat(aint *p);
+void *Lstring(aint *p);
 
 void *Bclosure(aint *args, aint bn);
 void *Barray(aint *args, aint bn);
