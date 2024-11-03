@@ -1,4 +1,5 @@
-/byterun.exe
+byterun.exe
+byterun
 
 build/
 .xmake/
@@ -8,4 +9,3 @@ compile_commands.json
 .cache/
 *.a
 *.o
-byterun

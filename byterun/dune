@@ -1,6 +1,7 @@
 (rule
  (target byterun.exe)
  (deps
+  (:include (source_tree include))
   (:main src/cli.c src/interpreter.c)
   (:parser src/parser.c)
   (:utils src/utils.c src/types.c src/stack.c)
@@ -8,4 +9,4 @@
  (mode
   (promote (until-clean)))
  (action
-  (run gcc -g -Iinclude/ %{main} %{runtime} -o %{target})))
+  (run gcc -Iinclude/ -g %{main} %{parser} %{utils} %{runtime} -o %{target})))

@@ -14,8 +14,6 @@
 
 #include "../../runtime/runtime_common.h"
 
-#define WORD_SIZE (CHAR_BIT * sizeof(int))
-
 // ---
 
 void Lassert(void *f, char *s, ...);

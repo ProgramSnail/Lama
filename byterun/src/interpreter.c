@@ -92,12 +92,12 @@ void run(bytefile *bf) {
         Bsexp((aint*)s.sp, ip_read_int(&s.ip)); // TODO: check order
         break;
         
-      case  3: // STI
+      case  3: // STI - write by ref (?)
         // TODO
         break;
         
-      case  4: // STA
-        // TODO
+      case  4: // STA - write to array elem
+        // Bsta // TODO
         break;
         
       case  5: // JMP 0x%.8x
