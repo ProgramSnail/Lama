@@ -4,6 +4,34 @@
 
 extern size_t __gc_stack_top, __gc_stack_bottom;
 
+#define PRE_GC()                                                                                   \
+  bool flag = false;                                                                               \
+  flag      = __gc_stack_top == 0;                                                                 \
+  if (flag) { __gc_stack_top = (size_t)__builtin_frame_address(0); }                               \
+  assert(__gc_stack_top != 0);                                                                     \
+  assert((__gc_stack_top & 0xF) == 0);                                                             \
+  assert(__builtin_frame_address(0) <= (void *)__gc_stack_top);
+
+#define POST_GC()                                                                                  \
+  assert(__builtin_frame_address(0) <= (void *)__gc_stack_top);                                    \
+  if (flag) { __gc_stack_top = 0; }
+
+// ------
+
+#define ASSERT_BOXED(memo, x)                                                                      \
+  do                                                                                               \
+    if (UNBOXED(x)) failure("boxed value expected in %s\n", memo);                                 \
+  while (0)
+#define ASSERT_UNBOXED(memo, x)                                                                    \
+  do                                                                                               \
+    if (!UNBOXED(x)) failure("unboxed value expected in %s\n", memo);                              \
+  while (0)
+#define ASSERT_STRING(memo, x)                                                                     \
+  do                                                                                               \
+    if (!UNBOXED(x) && TAG(TO_DATA(x)->data_header) != STRING_TAG)                                 \
+      failure("string value expected in %s\n", memo);                                              \
+  while (0)
+
 // ------ basic stack oprs ------
 
 void** s_top(struct State* s) {
@@ -82,7 +110,7 @@ void s_popn(struct State *s, size_t n) {
 
 // ------ functions ------
 
-void s_enter_f(struct State *s, char *rp, auint args_sz, auint locals_sz) {
+void s_enter_f(struct State *s, char *rp, bool is_closure_call, auint args_sz, auint locals_sz) {
   printf("-> %i args sz\n", args_sz);
   printf("-> %i locals sz\n", locals_sz);
 
@@ -94,11 +122,18 @@ void s_enter_f(struct State *s, char *rp, auint args_sz, auint locals_sz) {
     failure("not enough parameters in function stack");
   }
 
+  if (!is_closure_call) {
+    s_push_nil(s);
+  }
+
+  void* closure = s_peek(s);
+
   // s_push_nil(s); // sp contains value, frame starts with next value
-  s_pushn_nil(s, frame_sz());
+  s_pushn_nil(s, frame_sz() - 1);
 
   // create frame
   struct Frame frame = {
+       .closure = closure,
       .ret = NULL, // field in frame itself
       .rp = rp,
       .prev_fp = (void**)s->fp,
@@ -149,6 +184,8 @@ void print_stack(struct State* s) {
   printf("]\n");
 }
 
+// --- category ---
+
 void **var_by_category(struct State *s, enum VarCategory category,
                              int id) {
   if (id < 0) {
@@ -169,7 +206,7 @@ void **var_by_category(struct State *s, enum VarCategory category,
     if (f_locals_sz(s->fp) <= id) {
       failure("can't read local: too big id, %i >= %ul", id, f_locals_sz(s->fp));
     }
-    printf("id is %i, local is %i, %i\n", id, UNBOX((auint)*((void**)f_locals(s->fp) + id)), f_locals(s->fp) - s->sp);
+    // printf("id is %i, local is %i, %i\n", id, UNBOX((auint)*((void**)f_locals(s->fp) + id)), f_locals(s->fp) - s->sp);
     var = f_locals(s->fp) + (f_locals_sz(s->fp) - id - 1);
     break;
   case VAR_ARGUMENT:
@@ -179,11 +216,26 @@ void **var_by_category(struct State *s, enum VarCategory category,
     if (f_args_sz(s->fp) <= id) {
       failure("can't read arguments: too big id, %i >= %ul", id, f_args_sz(s->fp));
     }
-    printf("id is %i, arg is %i, %i\n", id, UNBOX((auint)*((void**)f_args(s->fp) + id)), f_args(s->fp) - s->sp);
-    var = f_args(s->fp) + (f_args_sz(s->fp) - id - 1); // TODO: check if not reversed order
+    var = f_args(s->fp) + (f_args_sz(s->fp) - id - 1);
     break;
-  case VAR_C: // clojure ??
-    // TODO: ??
+  case VAR_CLOSURE:
+    if (s->fp == NULL) {
+      failure("can't read closure parameter outside of function");
+    }
+    if (s->fp->closure == NULL) {
+      failure("can't read closure parameter not in closure");
+    }
+    if (UNBOXED(s->fp->closure)) { ASSERT_BOXED(".elem:1", s->fp->closure); }
+    data* d =  TO_DATA(s->fp->closure);
+    size_t count = get_len(d) - 1;
+    printf("id is %i, count is %i\n", id, count);
+    if (count <= id) {
+      failure("can't read arguments: too big id, %i >= %ul", id, count);
+    }
+    // TODO: check if not reversed order
+    return (void **)d->contents + id;
+    // &Belem(s->fp->closure, BOX(id + 1));
+    break;
     break;
   }
 

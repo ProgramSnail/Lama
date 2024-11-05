@@ -24,39 +24,36 @@ void **f_args(struct Frame *fp) { return (void **)fp + frame_sz(); }
 
 // --- State ---
 
-static struct State alloc_state(bytefile *bf) {
-  struct State state = {
-    .stack = calloc(STACK_SIZE + 1, sizeof(void*)),
-    .ip = bf->code_ptr,
-    .call_ip = NULL,
-    .bf = bf,
-  };
+static void alloc_state(bytefile *bf, struct State* s) {
+  // s->stack = calloc(STACK_SIZE + 1, sizeof(void*));
+  s->bf = bf;
+  s->is_closure_call = false;
+  s->ip = bf->code_ptr;
+  s->call_ip = NULL;
 
   for (size_t i = 0; i < STACK_SIZE; ++i) {
-    state.stack[i] = NULL;
+    s->stack[i] = NULL;
   }
 
-  state.sp = state.stack + STACK_SIZE; // [top -> bottom] stack
-  print_stack(&state);
-  state.fp = NULL;
-  return state;
+  s->sp = s->stack + STACK_SIZE; // [top -> bottom] stack
+  print_stack(s);
+  s->fp = NULL;
 }
 
-struct State init_state(bytefile *bf) {
+void init_state(bytefile *bf, struct State* s) {
   __init();
-  struct State state = alloc_state(bf);
-  __gc_stack_bottom = (size_t)state.sp;
-  // print_stack(&state);
+  alloc_state(bf, s);
+  __gc_stack_bottom = (size_t)s->sp;
+  // print_stack(s);
 
-  s_pushn_nil(&state, bf->global_area_size);
+  s_pushn_nil(s, bf->global_area_size);
 
   // print_stack(&state);
   printf("- state init done\n");
-  return state;
 }
 
 static void destruct_state(struct State* state) {
-  free(state->stack);
+  // free(state->stack);
 
   state->sp = NULL;
   state->fp = NULL;

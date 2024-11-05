@@ -29,8 +29,11 @@ void s_popn(struct State *s, size_t n);
 //
 // where |> defines corresponding frame pointer, | is stack pointer
 // location before / after new frame added
-void s_enter_f(struct State *s, char *rp, auint args_sz, auint locals_sz);
+void s_enter_f(struct State *s, char *rp, bool is_closure_call, auint args_sz,
+               auint locals_sz);
 
 void s_exit_f(struct State *s);
+
+// ---- category ---
 
 void **var_by_category(struct State *s, enum VarCategory category, int id);

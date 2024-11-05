@@ -19,10 +19,9 @@ char *ip_read_string(char **ip, bytefile *bf) {
   return get_string(bf, ip_read_int(ip));
 }
 
-// TODO: store globals in some way ?? // maybe some first vars ??
-
 void run(bytefile *bf) {
-  struct State s = init_state(bf);
+  struct State s;
+  init_state(bf, &s);
   print_stack(&s);
 
   printf("--- interpreter run ---\n");
@@ -59,6 +58,7 @@ void run(bytefile *bf) {
 
   do {
     // char *before_op_ip = s.ip; // save to set s.prev_ip
+    bool call_happened = false;
 
     char x = ip_read_byte(&s.ip), h = (x & 0xF0) >> 4, l = x & 0x0F;
 
@@ -93,20 +93,45 @@ void run(bytefile *bf) {
         break;
       }
 
-      case 2: // SEXP %s %d // create sexpr with tag=%s and %d elements from
-              // stack
+      case 2: { // SEXP %s %d // create sexpr with tag=%s and %d elements from
+                // stack
         // params read from stack
-        s_push_i(&s, LtagHash(ip_read_string(&s.ip, bf)));
-        Bsexp((aint *)s.sp, ip_read_int(&s.ip)); // TODO: check order
+        const char* name = ip_read_string(&s.ip, bf);
+        aint args_count = ip_read_int(&s.ip);
+        printf("tag hash is %i, n os %i\n", UNBOX(LtagHash((char*)name)), args_count);
+
+        if (args_count < 0) {
+          failure("SEXP: args count should be >= 0");
+        }
+        void ** buffer = calloc(args_count + 1, sizeof(void*));
+
+        for (size_t i = 0; i < args_count; ++i) {
+          buffer[i] = s_pop(&s);
+        }
+        buffer[args_count] = (void*)LtagHash((char*)name);
+
+        // TODO: FIXME: not working with elems
+        void* sexp = Bsexp((aint *)buffer, BOX(args_count + 1));
+
+        push_extra_root(sexp);
+        s_push(&s, sexp);
+        pop_extra_root(sexp);
+
+        free(buffer);
         break;
+      }
 
       case 3: // STI - write by ref (?)
         // TODO
         break;
 
-      case 4: // STA - write to array elem
-        // Bsta // TODO
+      case 4: { // STA - write to array elem
+        void* elem = s_pop(&s);
+        aint index = s_pop_i(&s);
+        void* data = s_pop(&s);
+        s_push(&s, Bsta(data, index, elem));
         break;
+      }
 
       case 5: {                         // JMP 0x%.8x
         int jmp_p = ip_read_int(&s.ip); // TODO: check
@@ -140,12 +165,7 @@ void run(bytefile *bf) {
 
       case 9: // DUP
       {
-        if (s.sp == s.stack + STACK_SIZE ||
-            (s.fp != NULL && s.sp == f_locals(s.fp))) {
-          failure("can't DUP: no value on stack");
-        }
-        *s.sp = *(s.sp - 1);
-        ++s.sp;
+        s_push(&s, *s.sp);
         break;
       }
 
@@ -164,9 +184,9 @@ void run(bytefile *bf) {
 
       case 11: // ELEM
       {
-        void *array = s_pop(&s);
         aint index = s_pop_i(&s);
-        s_push(&s, Belem(array, index));
+        void *data = s_pop(&s);
+        s_push(&s, Belem(data, index));
       } break;
 
       default:
@@ -223,43 +243,62 @@ void run(bytefile *bf) {
       case 2: { // BEGIN %d %d // function begin
         int args_sz = ip_read_int(&s.ip);
         int locals_sz = ip_read_int(&s.ip);
-        s_enter_f(&s, s.call_ip /*ip from call*/, args_sz, locals_sz);
+        if (s.fp != NULL && s.call_ip == NULL) {
+          failure("BEGIN: not after call");
+        }
+        s_enter_f(&s, s.call_ip /*ip from call*/, s.is_closure_call, args_sz, locals_sz);
         break;
       }
 
-      case 3: { // CBEGIN %d %d // TODO: clojure begin ??
+      case 3: { // CBEGIN %d %d // TODO: used ??
         int args_sz = ip_read_int(&s.ip);
         int locals_sz = ip_read_int(&s.ip);
-        s_enter_f(&s, s.call_ip /*ip from call*/, args_sz, locals_sz);
+        if (s.fp != NULL && s.call_ip == NULL) {
+          failure("BEGIN: not after call");
+        }
+        s_enter_f(&s, s.call_ip /*ip from call*/, s.is_closure_call, args_sz, locals_sz);
         break;
       }
 
-      case 4: // CLOSURE 0x%.8x
-        // TODO
+      case 4: // CLOSURE 0x%.8x // TODO: check
         {
-          int n = ip_read_int(&s.ip);
-          for (int i = 0; i < n; i++) {
-            switch (ip_read_byte(&s.ip)) {
-            // case 0: // G(%d)
-            // case 1: // L(%d)
-            // case 2: // A(%d)
-            // case 3: // C(%d)
-            default:
-              failure("invalid opcode %d-%d\n", h, l);
-            }
+          aint call_offset = ip_read_int(&s.ip);
+          aint args_count = ip_read_int(&s.ip);
+          for (aint i = 0; i < args_count; i++) {
+            aint arg_type = ip_read_byte(&s.ip);
+            aint arg_id = ip_read_int(&s.ip);
+
+            void **var_ptr =
+                var_by_category(&s, to_var_category(l), ip_read_int(&s.ip));
+            s_push(&s, *var_ptr);
           }
-        };
+          s_push(&s, bf->code_ptr + call_offset); // TODO: check way of storage ??
+
+          void* closure = Bclosure((aint*)s.sp, args_count);
+
+          push_extra_root(closure);
+          s_popn(&s, args_count + 1);
+          s_push(&s, closure);
+          pop_extra_root(closure);
         break;
+      }
 
       case 5: // CALLC %d // call clojure
-        // TODO FIXME: call clojure
-        // s.ip = (char*)(long)ip_read_int(&s.ip); // TODO: check
+        ip_read_int(&s.ip); // args count
+
+        call_happened = true;
+        s.is_closure_call = true;
+        s.call_ip = s.ip;
+
+        s.ip = Belem(s.sp, BOX(0)); // use offset instead ??
         break;
 
       case 6: {                          // CALL 0x%.8x %d // call function
-        int call_p = ip_read_int(&s.ip); // TODO: check
-        ip_read_int(&s.ip);
+        int call_p = ip_read_int(&s.ip);
+        ip_read_int(&s.ip); // args count
 
+        call_happened = true;
+        s.is_closure_call = false;
         s.call_ip = s.ip;
 
         if (call_p < 0) {
@@ -269,9 +308,22 @@ void run(bytefile *bf) {
         break;
       }
 
-      case 7:                                              // TAG %s
-        s_push_i(&s, LtagHash(ip_read_string(&s.ip, bf))); // TODO: check
+      case 7: { // TAG %s %d
+        const char* name = ip_read_string(&s.ip, bf);
+        aint args_count = ip_read_int(&s.ip);
+
+        printf("tag hash is %i, n is %i, peek is %i\n", UNBOX(LtagHash((char*)name)), args_count, s_peek(&s));
+        if (UNBOXED(s_peek(&s))) printf("aaaaaaaaaaaaaaaaaaa");
+        else {
+          data* r = TO_DATA(s_peek(&s));
+          if ((aint)BOX(TAG(r->data_header) != SEXP_TAG)) printf("bbbbbbbb %i %i", TAG(r->data_header), SEXP_TAG);
+          if (TO_SEXP(s_peek(&s))->tag != UNBOX(LtagHash((char*)name))) printf("cccccccccc");
+          if (LEN(r->data_header) != UNBOX(args_count)) printf("dddddd %i %i", LEN(r->data_header), UNBOX(args_count));
+        }
+
+        s_push_i(&s, Btag(s_pop(&s), LtagHash((char*)name), args_count));
         break;
+      }
 
       case 8: // ARRAY %d
         Barray((aint *)s.sp, ip_read_int(&s.ip));
@@ -291,11 +343,11 @@ void run(bytefile *bf) {
       }
       break;
 
-    case 6: // PATT pats[l] // TODO: check
+    case 6: // PATT pats[l]
       // {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"}
       switch (l) {
-      case 0:                                             // =str
-        s_push_i(&s, Bstring_patt(s_pop(&s), s_pop(&s))); // TODO: order
+      case 0: // =str
+        s_push_i(&s, Bstring_patt(s_pop(&s), s_pop(&s)));
         break;
       case 1: // #string
         s_push_i(&s, Bstring_tag_patt(s_pop(&s)));
@@ -307,10 +359,11 @@ void run(bytefile *bf) {
         s_push_i(&s, Bsexp_tag_patt(s_pop(&s)));
         break;
       case 4: // #ref
+        s_push_i(&s, Bunboxed_patt(s_pop(&s))); // TODO: check
         // TODO
         break;
       case 5: // #val
-        // TODO
+        s_push_i(&s, Bboxed_patt(s_pop(&s))); // TODO: check
         break;
       case 6: // #fun
         s_push_i(&s, Bclosure_tag_patt(s_pop(&s)));
@@ -359,7 +412,10 @@ void run(bytefile *bf) {
       failure("invalid opcode %d-%d\n", h, l);
     }
 
-    // s.call_ip = before_op_ip;
+    if (!call_happened) {
+      s.is_closure_call = false;
+      s.call_ip = NULL;
+    }
 
     if (s.fp == NULL) {
       break;

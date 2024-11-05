@@ -3,6 +3,7 @@
 #include "../../runtime/runtime.h"
 #include "../../runtime/runtime_common.h"
 #include "parser.h"
+#include <stdbool.h>
 #include <stdint.h>
 
 // ------ General ------
@@ -21,6 +22,7 @@ static const size_t MAX_ARRAY_SIZE = 0x11111110;
 // ------ Frame ------
 
 struct Frame {
+  void *closure;      // where closure value stored if needed
   void *ret;          // store returned value [gc pointer]
   char *rp;           // ret instruction pointer [not gc pointer]
   void **prev_fp;     // ret function frame pointer [boxed value, not gc
@@ -39,16 +41,18 @@ void **f_args(struct Frame *fp);
 // ------ State ------
 
 struct State {
-  void **stack;
+  void *stack[STACK_SIZE + 1];
   void **sp;        // stack pointer
   struct Frame *fp; // function frame pointer
   bytefile *bf;
+
+  bool is_closure_call;
 
   char *ip;      // instruction pointer
   char *call_ip; // prev instruction pointer (to remember jmp locations)
 };
 
-struct State init_state(bytefile *bf);
+void init_state(bytefile *bf, struct State *s);
 void cleanup_state(struct State *state);
 
 // ------ VarCategory ------
@@ -57,7 +61,7 @@ enum VarCategory {
   VAR_GLOBAL = 0,
   VAR_LOCAL = 1,
   VAR_ARGUMENT = 2,
-  VAR_C = 3 // TODO: constants ??
+  VAR_CLOSURE = 3
 };
 
 enum VarCategory to_var_category(uint8_t category);
