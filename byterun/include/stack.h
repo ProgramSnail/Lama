@@ -9,6 +9,7 @@
 
 void **s_top(struct State *s);
 bool s_is_empty(struct State *s);
+void **s_nth(struct State *s, aint n);
 void **s_peek(struct State *s);
 aint *s_peek_i(struct State *s);
 

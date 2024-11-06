@@ -283,15 +283,16 @@ void run(bytefile *bf) {
         break;
       }
 
-      case 5: // CALLC %d // call clojure
-        ip_read_int(&s.ip); // args count
+      case 5: { // CALLC %d // call clojure
+        aint args_count = ip_read_int(&s.ip); // args count
 
         call_happened = true;
         s.is_closure_call = true;
         s.call_ip = s.ip;
 
-        s.ip = Belem(s.sp, BOX(0)); // use offset instead ??
+        s.ip = Belem(*s_nth(&s, args_count), BOX(0)); // use offset instead ??
         break;
+      }
 
       case 6: {                          // CALL 0x%.8x %d // call function
         int call_p = ip_read_int(&s.ip);

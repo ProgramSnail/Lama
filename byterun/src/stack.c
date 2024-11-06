@@ -45,6 +45,20 @@ bool s_is_empty(struct State* s) {
   return false;
 }
 
+void **s_nth(struct State *s, aint n) {
+  if (n < 0) {
+    failure("can't access stack by negative index");
+  }
+  if (s->sp + n >= s_top(s)) {
+    failure("not enough elements in stack");
+  }
+  if (s->fp != NULL && s->sp + n >= f_locals(s->fp)) {
+    failure("not enough elements in function stack");
+  }
+
+  return s->sp + n;
+}
+
 void** s_peek(struct State* s) {
   if (s->sp == s_top(s)) {
     failure("empty stack");
@@ -115,21 +129,17 @@ void s_enter_f(struct State *s, char *rp, bool is_closure_call, auint args_sz, a
   printf("-> %i locals sz\n", locals_sz);
 
   // check that params count is valid
-  if (s->sp + (aint)args_sz - 1 >= s_top(s)) {
+  if (s->sp + (aint)args_sz - (is_closure_call ? 0 : 1) >= s_top(s)) {
     failure("not enough parameters in stack");
   }
-  if (s->fp != NULL && s->sp + (aint)args_sz - 1 >= f_locals(s->fp)) {
+  if (s->fp != NULL && s->sp + (aint)args_sz - (is_closure_call ? 0 : 1) >= f_locals(s->fp)) {
     failure("not enough parameters in function stack");
   }
 
-  if (!is_closure_call) {
-    s_push_nil(s);
-  }
-
-  void* closure = s_peek(s);
+  void* closure = is_closure_call ? s_nth(s, args_sz) : NULL;
 
   // s_push_nil(s); // sp contains value, frame starts with next value
-  s_pushn_nil(s, frame_sz() - 1);
+  s_pushn_nil(s, frame_sz());
 
   // create frame
   struct Frame frame = {
