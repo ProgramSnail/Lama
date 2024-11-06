@@ -96,22 +96,23 @@ void run(bytefile *bf) {
       case 2: { // SEXP %s %d // create sexpr with tag=%s and %d elements from
                 // stack
         // params read from stack
-        const char* name = ip_read_string(&s.ip, bf);
+        const char *name = ip_read_string(&s.ip, bf);
         aint args_count = ip_read_int(&s.ip);
-        printf("tag hash is %i, n os %i\n", UNBOX(LtagHash((char*)name)), args_count);
+        printf("tag hash is %i, n os %i\n", UNBOX(LtagHash((char *)name)),
+               args_count);
 
         if (args_count < 0) {
           failure("SEXP: args count should be >= 0");
         }
-        void ** buffer = calloc(args_count + 1, sizeof(void*));
+        void **buffer = calloc(args_count + 1, sizeof(void *));
 
         for (size_t i = 0; i < args_count; ++i) {
           buffer[i] = s_pop(&s);
         }
-        buffer[args_count] = (void*)LtagHash((char*)name);
+        buffer[args_count] = (void *)LtagHash((char *)name);
 
         // TODO: FIXME: not working with elems
-        void* sexp = Bsexp((aint *)buffer, BOX(args_count + 1));
+        void *sexp = Bsexp((aint *)buffer, BOX(args_count + 1));
 
         push_extra_root(sexp);
         s_push(&s, sexp);
@@ -121,20 +122,25 @@ void run(bytefile *bf) {
         break;
       }
 
-      case 3: // STI - write by ref (?)
-        // TODO
+      case 3: { // STI - write by ref (?)
+        // TODO: check, add checks
+        void *elem = s_pop(&s);
+        void **addr = (void **)s_pop(&s);
+        *addr = elem;
+        s_push(&s, elem);
         break;
+      }
 
       case 4: { // STA - write to array elem
-        void* elem = s_pop(&s);
+        void *elem = s_pop(&s);
         aint index = s_pop_i(&s);
-        void* data = s_pop(&s);
+        void *data = s_pop(&s);
         s_push(&s, Bsta(data, index, elem));
         break;
       }
 
-      case 5: {                         // JMP 0x%.8x
-        int jmp_p = ip_read_int(&s.ip); // TODO: check
+      case 5: { // JMP 0x%.8x
+        int jmp_p = ip_read_int(&s.ip);
 
         if (jmp_p < 0) {
           failure("negative file offset jumps are not allowed");
@@ -246,7 +252,8 @@ void run(bytefile *bf) {
         if (s.fp != NULL && s.call_ip == NULL) {
           failure("BEGIN: not after call");
         }
-        s_enter_f(&s, s.call_ip /*ip from call*/, s.is_closure_call, args_sz, locals_sz);
+        s_enter_f(&s, s.call_ip /*ip from call*/, s.is_closure_call, args_sz,
+                  locals_sz);
         break;
       }
 
@@ -256,34 +263,35 @@ void run(bytefile *bf) {
         if (s.fp != NULL && s.call_ip == NULL) {
           failure("BEGIN: not after call");
         }
-        s_enter_f(&s, s.call_ip /*ip from call*/, s.is_closure_call, args_sz, locals_sz);
+        s_enter_f(&s, s.call_ip /*ip from call*/, s.is_closure_call, args_sz,
+                  locals_sz);
         break;
       }
 
-      case 4: // CLOSURE 0x%.8x // TODO: check
-        {
-          aint call_offset = ip_read_int(&s.ip);
-          aint args_count = ip_read_int(&s.ip);
-          for (aint i = 0; i < args_count; i++) {
-            aint arg_type = ip_read_byte(&s.ip);
-            aint arg_id = ip_read_int(&s.ip);
+      case 4: // CLOSURE 0x%.8x
+      {
+        aint call_offset = ip_read_int(&s.ip);
+        aint args_count = ip_read_int(&s.ip);
+        for (aint i = 0; i < args_count; i++) {
+          aint arg_type = ip_read_byte(&s.ip);
+          aint arg_id = ip_read_int(&s.ip);
 
-            void **var_ptr =
-                var_by_category(&s, to_var_category(l), ip_read_int(&s.ip));
-            s_push(&s, *var_ptr);
-          }
-          s_push(&s, bf->code_ptr + call_offset); // TODO: check way of storage ??
+          void **var_ptr =
+              var_by_category(&s, to_var_category(l), ip_read_int(&s.ip));
+          s_push(&s, *var_ptr);
+        }
+        s_push(&s, bf->code_ptr + call_offset); // TODO: check way of storage ??
 
-          void* closure = Bclosure((aint*)s.sp, args_count);
+        void *closure = Bclosure((aint *)s.sp, args_count);
 
-          push_extra_root(closure);
-          s_popn(&s, args_count + 1);
-          s_push(&s, closure);
-          pop_extra_root(closure);
+        push_extra_root(closure);
+        s_popn(&s, args_count + 1);
+        s_push(&s, closure);
+        pop_extra_root(closure);
         break;
       }
 
-      case 5: { // CALLC %d // call clojure
+      case 5: {                               // CALLC %d // call clojure
         aint args_count = ip_read_int(&s.ip); // args count
 
         call_happened = true;
@@ -294,7 +302,7 @@ void run(bytefile *bf) {
         break;
       }
 
-      case 6: {                          // CALL 0x%.8x %d // call function
+      case 6: { // CALL 0x%.8x %d // call function
         int call_p = ip_read_int(&s.ip);
         ip_read_int(&s.ip); // args count
 
@@ -310,19 +318,24 @@ void run(bytefile *bf) {
       }
 
       case 7: { // TAG %s %d
-        const char* name = ip_read_string(&s.ip, bf);
+        const char *name = ip_read_string(&s.ip, bf);
         aint args_count = ip_read_int(&s.ip);
 
-        printf("tag hash is %i, n is %i, peek is %i\n", UNBOX(LtagHash((char*)name)), args_count, s_peek(&s));
-        if (UNBOXED(s_peek(&s))) printf("aaaaaaaaaaaaaaaaaaa");
+        printf("tag hash is %i, n is %i, peek is %i\n",
+               UNBOX(LtagHash((char *)name)), args_count, s_peek(&s));
+        if (UNBOXED(s_peek(&s)))
+          printf("aaaaaaaaaaaaaaaaaaa");
         else {
-          data* r = TO_DATA(s_peek(&s));
-          if ((aint)BOX(TAG(r->data_header) != SEXP_TAG)) printf("bbbbbbbb %i %i", TAG(r->data_header), SEXP_TAG);
-          if (TO_SEXP(s_peek(&s))->tag != UNBOX(LtagHash((char*)name))) printf("cccccccccc");
-          if (LEN(r->data_header) != UNBOX(args_count)) printf("dddddd %i %i", LEN(r->data_header), UNBOX(args_count));
+          data *r = TO_DATA(s_peek(&s));
+          if ((aint)BOX(TAG(r->data_header) != SEXP_TAG))
+            printf("bbbbbbbb %i %i", TAG(r->data_header), SEXP_TAG);
+          if (TO_SEXP(s_peek(&s))->tag != UNBOX(LtagHash((char *)name)))
+            printf("cccccccccc");
+          if (LEN(r->data_header) != UNBOX(args_count))
+            printf("dddddd %i %i", LEN(r->data_header), UNBOX(args_count));
         }
 
-        s_push_i(&s, Btag(s_pop(&s), LtagHash((char*)name), args_count));
+        s_push_i(&s, Btag(s_pop(&s), LtagHash((char *)name), args_count));
         break;
       }
 
@@ -330,8 +343,10 @@ void run(bytefile *bf) {
         Barray((aint *)s.sp, ip_read_int(&s.ip));
         break;
 
-      case 9: // FAIL %d %d // TODO
-        failure("[FAIL]: %d-%d\n", ip_read_int(&s.ip), ip_read_int(&s.ip));
+      case 9: // FAIL %d %d
+        // TODO: check (?)
+        // TODO: real filename
+        Bmatch_failure(s_pop(&s), "interpreter", ip_read_int(&s.ip), ip_read_int(&s.ip));
         break;
 
       case 10: // LINE %d
@@ -359,11 +374,10 @@ void run(bytefile *bf) {
       case 3: // #sexp
         s_push_i(&s, Bsexp_tag_patt(s_pop(&s)));
         break;
-      case 4: // #ref
+      case 4:                                   // #ref
         s_push_i(&s, Bunboxed_patt(s_pop(&s))); // TODO: check
-        // TODO
         break;
-      case 5: // #val
+      case 5:                                 // #val
         s_push_i(&s, Bboxed_patt(s_pop(&s))); // TODO: check
         break;
       case 6: // #fun
@@ -390,8 +404,7 @@ void run(bytefile *bf) {
 
       case 3: { // CALL Lstring
         void *val = s_pop(&s);
-        void *str =
-            Lstring((aint *)&val); // FIXME: not working, GC extra root error
+        void *str = Lstring((aint *)&val);
         s_push(&s, str);
         break;
       }
