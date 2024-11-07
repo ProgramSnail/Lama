@@ -19,7 +19,7 @@ char *ip_read_string(char **ip, bytefile *bf) {
   return get_string(bf, ip_read_int(ip));
 }
 
-void run(bytefile *bf) {
+void run(bytefile *bf, int argc, char **argv) {
   struct State s;
   init_state(bf, &s);
 
@@ -50,10 +50,16 @@ void run(bytefile *bf) {
   const char *pats[] = {"=str", "#string", "#array", "#sexp",
                         "#ref", "#val",    "#fun"};
 
-  // TODO: actual argc, argv
-  s_push_i(&s, BOX(1)); // argc
-  const char *argv_0 = "interpreter";
-  s_push(&s, Bstring((aint *)&argv_0)); // argv
+  // argc, argv
+  {
+    s_push_i(&s, BOX(argc));
+    void **argv_strs = calloc(argc, sizeof(void *));
+    for (size_t i = 0; i < argc; ++i) {
+      argv_strs[i] = Bstring((aint *)&argv[i]);
+    }
+    s_push(&s, Barray((aint *)&argv_strs, argc));
+    free(argv_strs);
+  }
 
 #ifdef DEBUG_VERSION
   printf("- loop start\n");
@@ -104,7 +110,7 @@ void run(bytefile *bf) {
         const char *name = ip_read_string(&s.ip, bf);
         aint args_count = ip_read_int(&s.ip);
 #ifdef DEBUG_VERSION
-        printf("tag hash is %i, n os %i\n", UNBOX(LtagHash((char *)name)),
+        printf("tag hash is %i, n is %i\n", UNBOX(LtagHash((char *)name)),
                args_count);
 #endif
 
@@ -113,12 +119,11 @@ void run(bytefile *bf) {
         }
         void **buffer = calloc(args_count + 1, sizeof(void *));
 
-        for (size_t i = 0; i < args_count; ++i) {
-          buffer[i] = s_pop(&s);
+        for (size_t i = 1; i <= args_count; ++i) {
+          buffer[args_count - i] = s_pop(&s);
         }
         buffer[args_count] = (void *)LtagHash((char *)name);
 
-        // TODO: FIXME: not working with elems
         void *sexp = Bsexp((aint *)buffer, BOX(args_count + 1));
 
         push_extra_root(sexp);
@@ -130,7 +135,7 @@ void run(bytefile *bf) {
       }
 
       case 3: { // STI - write by ref (?)
-        // TODO: check, add checks
+        // NOTE: example not found, no checks done
         void *elem = s_pop(&s);
         void **addr = (void **)s_pop(&s);
         *addr = elem;
@@ -264,7 +269,8 @@ void run(bytefile *bf) {
         break;
       }
 
-      case 3: { // CBEGIN %d %d // TODO: used ??
+      case 3: { // CBEGIN %d %d
+        // NOTE: example not found, no checks done
         int args_sz = ip_read_int(&s.ip);
         int locals_sz = ip_read_int(&s.ip);
         if (s.fp != NULL && s.call_ip == NULL) {
@@ -287,7 +293,7 @@ void run(bytefile *bf) {
               var_by_category(&s, to_var_category(l), ip_read_int(&s.ip));
           s_push(&s, *var_ptr);
         }
-        s_push(&s, bf->code_ptr + call_offset); // TODO: check way of storage ??
+        s_push(&s, bf->code_ptr + call_offset);
 
         void *closure = Bclosure((aint *)s.sp, args_count);
 
@@ -333,7 +339,7 @@ void run(bytefile *bf) {
                UNBOX(LtagHash((char *)name)), args_count, s_peek(&s));
 #endif
 
-        s_push_i(&s, Btag(s_pop(&s), LtagHash((char *)name), args_count));
+        s_push_i(&s, Btag(s_pop(&s), LtagHash((char *)name), BOX(args_count)));
         break;
       }
 
@@ -342,9 +348,8 @@ void run(bytefile *bf) {
         break;
 
       case 9: // FAIL %d %d
-        // TODO: check (?)
-        // TODO: real filename
-        Bmatch_failure(s_pop(&s), "interpreter", ip_read_int(&s.ip), ip_read_int(&s.ip));
+        Bmatch_failure(s_pop(&s), argv[0], ip_read_int(&s.ip),
+                       ip_read_int(&s.ip));
         break;
 
       case 10: // LINE %d
@@ -372,11 +377,11 @@ void run(bytefile *bf) {
       case 3: // #sexp
         s_push_i(&s, Bsexp_tag_patt(s_pop(&s)));
         break;
-      case 4:                                   // #ref
-        s_push_i(&s, Bunboxed_patt(s_pop(&s))); // TODO: check
+      case 4: // #ref
+        s_push_i(&s, Bunboxed_patt(s_pop(&s)));
         break;
-      case 5:                                 // #val
-        s_push_i(&s, Bboxed_patt(s_pop(&s))); // TODO: check
+      case 5: // #val
+        s_push_i(&s, Bboxed_patt(s_pop(&s)));
         break;
       case 6: // #fun
         s_push_i(&s, Bclosure_tag_patt(s_pop(&s)));
@@ -409,7 +414,8 @@ void run(bytefile *bf) {
 
       case 4: { // CALL Barray %d
         size_t n = ip_read_int(&s.ip);
-        void *array = Barray((aint *)s.sp, n); // TODO: are elems added (?)
+        void *array =
+            Barray((aint *)s.sp, n); // NOTE: not shure if elems should be added
         s_popn(&s, n);
         s_push(&s, array);
         break;

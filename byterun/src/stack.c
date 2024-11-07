@@ -254,9 +254,7 @@ void **var_by_category(struct State *s, enum VarCategory category,
     if (count <= id) {
       failure("can't read arguments: too big id, %i >= %ul", id, count);
     }
-    // TODO: check
-    return (void **)d->contents + id; // order is not important ??
-    // &Belem(s->fp->closure, BOX(id + 1));
+    return (void **)d->contents + id; // order is not important
     break;
     break;
   }
