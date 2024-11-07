@@ -22,9 +22,10 @@ char *ip_read_string(char **ip, bytefile *bf) {
 void run(bytefile *bf) {
   struct State s;
   init_state(bf, &s);
-  print_stack(&s);
 
+#ifdef DEBUG_VERSION
   printf("--- interpreter run ---\n");
+#endif
 
   const size_t OPS_SIZE = 13;
   const char *ops[] = {
@@ -54,7 +55,9 @@ void run(bytefile *bf) {
   const char *argv_0 = "interpreter";
   s_push(&s, Bstring((aint *)&argv_0)); // argv
 
+#ifdef DEBUG_VERSION
   printf("- loop start\n");
+#endif
 
   do {
     // char *before_op_ip = s.ip; // save to set s.prev_ip
@@ -62,7 +65,9 @@ void run(bytefile *bf) {
 
     char x = ip_read_byte(&s.ip), h = (x & 0xF0) >> 4, l = x & 0x0F;
 
+#ifdef DEBUG_VERSION
     printf("0x%.8x\n", s.ip - bf->code_ptr - 1);
+#endif
 
     switch (h) {
     case 15:
@@ -98,8 +103,10 @@ void run(bytefile *bf) {
         // params read from stack
         const char *name = ip_read_string(&s.ip, bf);
         aint args_count = ip_read_int(&s.ip);
+#ifdef DEBUG_VERSION
         printf("tag hash is %i, n os %i\n", UNBOX(LtagHash((char *)name)),
                args_count);
+#endif
 
         if (args_count < 0) {
           failure("SEXP: args count should be >= 0");
@@ -321,19 +328,10 @@ void run(bytefile *bf) {
         const char *name = ip_read_string(&s.ip, bf);
         aint args_count = ip_read_int(&s.ip);
 
+#ifdef DEBUG_VERSION
         printf("tag hash is %i, n is %i, peek is %i\n",
                UNBOX(LtagHash((char *)name)), args_count, s_peek(&s));
-        if (UNBOXED(s_peek(&s)))
-          printf("aaaaaaaaaaaaaaaaaaa");
-        else {
-          data *r = TO_DATA(s_peek(&s));
-          if ((aint)BOX(TAG(r->data_header) != SEXP_TAG))
-            printf("bbbbbbbb %i %i", TAG(r->data_header), SEXP_TAG);
-          if (TO_SEXP(s_peek(&s))->tag != UNBOX(LtagHash((char *)name)))
-            printf("cccccccccc");
-          if (LEN(r->data_header) != UNBOX(args_count))
-            printf("dddddd %i %i", LEN(r->data_header), UNBOX(args_count));
-        }
+#endif
 
         s_push_i(&s, Btag(s_pop(&s), LtagHash((char *)name), args_count));
         break;
@@ -434,9 +432,13 @@ void run(bytefile *bf) {
     if (s.fp == NULL) {
       break;
     }
+#ifdef DEBUG_VERSION
     print_stack(&s);
+#endif
   } while (1);
 stop:;
+#ifdef DEBUG_VERSION
   printf("--- run end ---\n");
+#endif
   cleanup_state(&s);
 }

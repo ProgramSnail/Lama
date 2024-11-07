@@ -36,7 +36,6 @@ static void alloc_state(bytefile *bf, struct State* s) {
   }
 
   s->sp = s->stack + STACK_SIZE; // [top -> bottom] stack
-  print_stack(s);
   s->fp = NULL;
 }
 
@@ -44,12 +43,13 @@ void init_state(bytefile *bf, struct State* s) {
   __init();
   alloc_state(bf, s);
   __gc_stack_bottom = (size_t)s->sp;
-  // print_stack(s);
 
   s_pushn_nil(s, bf->global_area_size);
 
-  // print_stack(&state);
+#ifdef DEBUG_VERSION
+  print_stack(s);
   printf("- state init done\n");
+#endif
 }
 
 static void destruct_state(struct State* state) {

@@ -11,9 +11,11 @@ int main(int argc, char** argv) {
     failure("too many arguments");
   }
 
-  
+  // printf("size of aint is %i\n", sizeof(aint));
   bytefile *f = read_file(argv[1]);
+#ifdef DEBUG_VERSION
   dump_file (stdout, f);
+#endif
   run(f);
 
   free(f);

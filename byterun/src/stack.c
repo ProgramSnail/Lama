@@ -78,7 +78,9 @@ void s_push(struct State *s, void *val) {
   if (s->sp == s->stack) {
     failure("stack overflow");
   }
+#ifdef DEBUG_VERSION
   printf("--> push\n");
+#endif
   --s->sp;
   *s->sp = val;
 }
@@ -104,7 +106,9 @@ void* s_pop(struct State *s) {
   if (s->fp != NULL && s->sp == f_locals(s->fp)) {
     failure("empty function stack");
   }
+#ifdef DEBUG_VERSION
   printf("--> pop\n");
+#endif
   void* value = *s->sp;
   *s->sp = NULL;
   ++s->sp;
@@ -125,8 +129,10 @@ void s_popn(struct State *s, size_t n) {
 // ------ functions ------
 
 void s_enter_f(struct State *s, char *rp, bool is_closure_call, auint args_sz, auint locals_sz) {
+#ifdef DEBUG_VERSION
   printf("-> %i args sz\n", args_sz);
   printf("-> %i locals sz\n", locals_sz);
+#endif
 
   // check that params count is valid
   if (s->sp + (aint)args_sz - (is_closure_call ? 0 : 1) >= s_top(s)) {
@@ -169,11 +175,15 @@ void s_exit_f(struct State *s) {
   // drop stack entities, locals, frame
   size_t to_pop = f_args(s->fp) - s->sp;
   s->fp = (struct Frame*)f_prev_fp(&frame);
+#ifdef DEBUG_VERSION
   printf("-> %zu to pop\n", to_pop);
+#endif
   s_popn(s, to_pop);
 
   // drop args
+#ifdef DEBUG_VERSION
   printf("-> + %zu to pop\n", f_args_sz(&frame));
+#endif
   s_popn(s, f_args_sz(&frame));
 
   // save returned value, not in main
@@ -238,7 +248,9 @@ void **var_by_category(struct State *s, enum VarCategory category,
     if (UNBOXED(s->fp->closure)) { ASSERT_BOXED(".elem:1", s->fp->closure); }
     data* d =  TO_DATA(s->fp->closure);
     size_t count = get_len(d) - 1;
+#ifdef DEBUG_VERSION
     printf("id is %i, count is %i\n", id, count);
+#endif
     if (count <= id) {
       failure("can't read arguments: too big id, %i >= %ul", id, count);
     }
