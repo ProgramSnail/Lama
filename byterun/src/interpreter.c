@@ -344,16 +344,18 @@ void run(bytefile *bf, int argc, char **argv) {
       }
 
       case 8: // ARRAY %d
-        Barray((aint *)s.sp, ip_read_int(&s.ip));
+        s_push_i(&s, Barray_patt(s_pop(&s), BOX(ip_read_int(&s.ip))));
         break;
 
-      case 9: // FAIL %d %d
-        Bmatch_failure(s_pop(&s), argv[0], ip_read_int(&s.ip),
-                       ip_read_int(&s.ip));
+      case 9: {                        // FAIL %d %d
+        int line = ip_read_int(&s.ip); // ??
+        int col = ip_read_int(&s.ip);  // ??
+        Bmatch_failure(s_pop(&s), argv[0], BOX(line), BOX(col));
         break;
+      }
 
       case 10: // LINE %d
-        ip_read_int(&s.ip);
+        s.current_line = ip_read_int(&s.ip);
         // maybe some metainfo should be collected
         break;
 
@@ -413,11 +415,22 @@ void run(bytefile *bf, int argc, char **argv) {
       }
 
       case 4: { // CALL Barray %d
-        size_t n = ip_read_int(&s.ip);
+        size_t elem_count = ip_read_int(&s.ip);
+        if (elem_count < 0) {
+          failure("ARRAY: elements count should be >= 0");
+        }
+
+        void **buffer = calloc(elem_count, sizeof(void *));
+        for (size_t i = 0; i < elem_count; ++i) {
+          buffer[elem_count - i - 1] = s_pop(&s);
+        }
+
         void *array =
-            Barray((aint *)s.sp, n); // NOTE: not shure if elems should be added
-        s_popn(&s, n);
+            Barray((aint *)buffer, BOX(elem_count)); // NOTE: not shure if elems should be added
+        // s_popn(&s, elem_count);
         s_push(&s, array);
+
+        free(buffer);
         break;
       }
 

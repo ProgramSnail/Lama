@@ -45,6 +45,7 @@ struct State {
   void **sp;        // stack pointer
   struct Frame *fp; // function frame pointer
   bytefile *bf;
+  int current_line;
 
   bool is_closure_call;
 

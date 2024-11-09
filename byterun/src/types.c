@@ -30,6 +30,7 @@ static void alloc_state(bytefile *bf, struct State* s) {
   s->is_closure_call = false;
   s->ip = bf->code_ptr;
   s->call_ip = NULL;
+  s->current_line = 0;
 
   for (size_t i = 0; i < STACK_SIZE; ++i) {
     s->stack[i] = NULL;
