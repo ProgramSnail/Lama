@@ -19,8 +19,10 @@ char *ip_read_string(char **ip, bytefile *bf) {
   return get_string(bf, ip_read_int(ip));
 }
 
+const size_t BUFFER_SIZE = 1000;
+
 void run(bytefile *bf, int argc, char **argv) {
-  void *buffer[10000]; // FIXME: TODO: TMP
+  void *buffer[BUFFER_SIZE];
   struct State s;
   init_state(bf, &s);
 
@@ -118,20 +120,22 @@ void run(bytefile *bf, int argc, char **argv) {
         if (args_count < 0) {
           s_failure(&s, "args count should be >= 0");
         }
-        // void **buffer = calloc(args_count + 1, sizeof(void *));
+        void **opr_buffer = args_count >= BUFFER_SIZE ? calloc(args_count + 1, sizeof(void *)) : buffer;
 
         for (size_t i = 1; i <= args_count; ++i) {
-          buffer[args_count - i] = s_pop(&s);
+          opr_buffer[args_count - i] = s_pop(&s);
         }
-        buffer[args_count] = (void *)LtagHash((char *)name);
+        opr_buffer[args_count] = (void *)LtagHash((char *)name);
 
-        void *sexp = Bsexp((aint *)buffer, BOX(args_count + 1));
+        void *sexp = Bsexp((aint *)opr_buffer, BOX(args_count + 1));
 
         push_extra_root(sexp);
         s_push(&s, sexp);
         pop_extra_root(sexp);
 
-        // free(buffer);
+        if (args_count >= BUFFER_SIZE) {
+          free(opr_buffer);
+        }
         break;
       }
 
@@ -426,17 +430,18 @@ void run(bytefile *bf, int argc, char **argv) {
           s_failure(&s, "elements count should be >= 0");
         }
 
-        // void **buffer = calloc(elem_count, sizeof(void *));
+        void **opr_buffer = elem_count > BUFFER_SIZE ? calloc(elem_count, sizeof(void *)) : buffer;
         for (size_t i = 0; i < elem_count; ++i) {
-          buffer[elem_count - i - 1] = s_pop(&s);
+          opr_buffer[elem_count - i - 1] = s_pop(&s);
         }
 
         void *array =
-            Barray((aint *)buffer, BOX(elem_count)); // NOTE: not shure if elems should be added
-        // s_popn(&s, elem_count);
+            Barray((aint *)opr_buffer, BOX(elem_count)); // NOTE: not shure if elems should be added
         s_push(&s, array);
 
-        // free(buffer);
+        if (elem_count > BUFFER_SIZE) {
+          free(opr_buffer);
+        }
         break;
       }
 

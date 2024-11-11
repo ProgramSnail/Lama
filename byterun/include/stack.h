@@ -7,6 +7,8 @@
 
 #include "stdlib.h"
 
+extern size_t __gc_stack_top, __gc_stack_bottom;
+
 static inline void **s_top(struct State *s) {
   return s->stack + STACK_SIZE - s->bf->global_area_size;
 }
@@ -54,7 +56,8 @@ static inline void s_push(struct State *s, void *val) {
 #endif
   --s->sp;
   *s->sp = val;
-  // __gc_stack_top= (size_t)(s->sp - 1);
+  __gc_stack_top = (size_t)(s->sp);
+  __gc_stack_top -= __gc_stack_top & 0xF;
 }
 
 static inline void s_push_i(struct State *s, aint val) {
@@ -82,7 +85,8 @@ static inline void *s_pop(struct State *s) {
   void *value = *s->sp;
   *s->sp = NULL;
   ++s->sp;
-  // __gc_stack_top = (size_t)(s->sp - 1);
+  __gc_stack_top = (size_t)(s->sp);
+  __gc_stack_top -= __gc_stack_top & 0xF;
   return value;
 }
 
@@ -226,7 +230,7 @@ static inline void **var_by_category(struct State *s, enum VarCategory category,
     if (s->fp->closure == NULL) {
       s_failure(s, "can't read closure parameter not in closure");
     }
-    if (!UNBOXED(s->fp->closure)) { // TODO: check ??
+    if (UNBOXED(s->fp->closure)) {
       s_failure(s, "not boxed value expected in closure index");
     }
     data *d = TO_DATA(s->fp->closure);
