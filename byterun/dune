@@ -4,9 +4,9 @@
   (:include (source_tree include))
   (:main src/cli.c src/interpreter.c)
   (:parser src/parser.c)
-  (:utils src/utils.c src/types.c src/stack.c)
+  (:utils src/types.c)
   (:runtime ../runtime/runtime.a))
  (mode
   (promote (until-clean)))
  (action
-  (run gcc -Iinclude/ -g -pg %{main} %{parser} %{utils} %{runtime} -o %{target})))
+  (run gcc -Iinclude/ %{main} %{parser} %{utils} %{runtime} -o %{target})))

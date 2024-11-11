@@ -9,21 +9,6 @@
 
 extern size_t __gc_stack_top, __gc_stack_bottom;
 
-// --- Frame ---
-
-// NOTE: stack is [top -> bottom]
-size_t frame_sz() {
-  return sizeof(struct Frame) / sizeof(void *);
-}
-void **f_prev_fp(struct Frame *fp) {
-  return fp->prev_fp;
-}
-auint f_locals_sz(struct Frame *fp) { return UNBOX(fp->locals_sz_box); }
-auint f_args_sz(struct Frame *fp) { return UNBOX(fp->args_sz_box); }
-void **f_locals(struct Frame *fp) { return (void **)fp - f_locals_sz(fp); }
-void **f_args(struct Frame *fp) { return (void **)fp + frame_sz(); }
-
-
 // --- State ---
 
 static void alloc_state(bytefile *bf, struct State* s) {
@@ -69,17 +54,4 @@ static void destruct_state(struct State* state) {
 void cleanup_state(struct State* state) {
   destruct_state(state);
   __shutdown();
-}
-
-void s_failure(struct State *s, const char *msg) {
-  exec_failure(read_cmd(s->instr_ip), s->current_line, s->instr_ip - s->bf->code_ptr, msg);
-}
-
-// --- VarCategory ---
-
-enum VarCategory to_var_category(struct State* s, uint8_t category) {
-  if (category > 3) {
-    s_failure(s, "unexpected variable category");
-  }
-  return (enum VarCategory)category;
 }

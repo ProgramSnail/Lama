@@ -31,12 +31,23 @@ struct Frame {
   aint locals_sz_box; // store locals [boxed value, not gc pointer]
 };
 
-auint frame_sz();
-void **f_prev_fp(struct Frame *fp);
-auint f_locals_sz(struct Frame *fp);
-auint f_args_sz(struct Frame *fp);
-void **f_locals(struct Frame *fp);
-void **f_args(struct Frame *fp);
+// NOTE: stack is [top -> bottom]
+static inline size_t frame_sz() {
+  return sizeof(struct Frame) / sizeof(void *);
+}
+static inline void **f_prev_fp(struct Frame *fp) { return fp->prev_fp; }
+static inline auint f_locals_sz(struct Frame *fp) {
+  return UNBOX(fp->locals_sz_box);
+}
+static inline auint f_args_sz(struct Frame *fp) {
+  return UNBOX(fp->args_sz_box);
+}
+static inline void **f_locals(struct Frame *fp) {
+  return (void **)fp - f_locals_sz(fp);
+}
+static inline void **f_args(struct Frame *fp) {
+  return (void **)fp + frame_sz();
+}
 
 // ------ State ------
 
@@ -57,7 +68,10 @@ struct State {
 void init_state(bytefile *bf, struct State *s);
 void cleanup_state(struct State *state);
 
-void s_failure(struct State *state, const char *msg);
+static inline void s_failure(struct State *s, const char *msg) {
+  exec_failure(read_cmd(s->instr_ip), s->current_line,
+               s->instr_ip - s->bf->code_ptr, msg);
+}
 
 // ------ VarCategory ------
 
@@ -68,4 +82,10 @@ enum VarCategory {
   VAR_CLOSURE = 3
 };
 
-enum VarCategory to_var_category(struct State *s, uint8_t category);
+static inline enum VarCategory to_var_category(struct State *s,
+                                               uint8_t category) {
+  if (category > 3) {
+    s_failure(s, "unexpected variable category");
+  }
+  return (enum VarCategory)category;
+}

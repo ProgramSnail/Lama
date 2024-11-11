@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../../runtime/runtime.h"
 #include "../../runtime/runtime_common.h"
 
 /* The unpacked representation of bytecode file */
@@ -19,14 +20,24 @@ typedef struct {
 } bytefile;
 
 /* Gets a string from a string table by an index */
-char *get_string(bytefile *f, size_t pos);
+static inline char *get_string(bytefile *f, size_t pos) {
+  return &f->string_ptr[pos];
+}
 
 /* Gets a name for a public symbol */
-char *get_public_name(bytefile *f, size_t i);
+static inline char *get_public_name(bytefile *f, size_t i) {
+  return get_string(f, f->public_ptr[i * 2]);
+}
 
-/* Gets an offset for a public symbol */
-size_t get_public_offset(bytefile *f, size_t i);
+/* Gets an offset for a publie symbol */
+static inline size_t get_public_offset(bytefile *f, size_t i) {
+  return f->public_ptr[i * 2 + 1];
+}
 
-void exec_failure(const char *cmd, int line, aint offset, const char *msg);
+static inline void exec_failure(const char *cmd, int line, aint offset,
+                                const char *msg) {
+  failure("*** RUNTIME ERROR: %i(0x%.8x):%s error: %s\n", line, offset, cmd,
+          msg);
+}
 
 // ---
