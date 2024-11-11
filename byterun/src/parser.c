@@ -29,7 +29,7 @@ bytefile* read_file (char *fname) {
   file = (bytefile*) malloc (size + sizeof(void*) * 4);
 
   if (file == 0) {
-    failure ("*** FAILURE: unable to allocate memory.\n");
+    failure ("unable to allocate memory to store file data\n");
   }
   
   rewind (f);
@@ -46,6 +46,101 @@ bytefile* read_file (char *fname) {
   file->global_ptr  = (int*) calloc (file->global_area_size, sizeof (int));
   
   return file;
+}
+
+const char *read_cmd(char *ip) {
+  char x = (*ip++), h = (x & 0xF0) >> 4, l = x & 0x0F;
+
+  switch (h) {
+  case 15:
+    return "END";
+  case 0:
+    return "BINOP";
+  case 1:
+    switch (l) {
+    case 0:
+      return "CONST";
+    case 1:
+      return "STRING";
+    case 2:
+      return "SEXP ";
+    case 3:
+      return "STI";
+    case 4:
+      return "STA";
+    case 5:
+      return "JMP";
+    case 6:
+      return "END";
+    case 7:
+      return "RET";
+    case 8:
+      return "DROP";
+    case 9:
+      return "DUP";
+    case 10:
+      return "SWAP";
+    case 11:
+      return "ELEM";
+    default:
+      return "_UNDEF_CMD1_";
+    }
+    break;
+
+  case 2:
+    return "LD";
+  case 3:
+    return "LDA";
+  case 4:
+    return "ST";
+  case 5:
+    switch (l) {
+    case 0:
+      return "CJMPz";
+    case 1:
+      return "CJMPnz";
+    case 2:
+      return "BEGIN";
+    case 3:
+      return "CBEGIN";
+    case 4:
+      return "CLOSURE";
+    case 5:
+      return "CALLC";
+    case 6:
+      return "CALL";
+    case 7:
+      return "TAG";
+    case 8:
+      return "ARRAY";
+    case 9:
+      return "FAIL";
+    case 10:
+      return "LINE";
+    default:
+      return "_UNDEF_CMD5_";
+    }
+  case 6:
+    return "PATT";
+  case 7: {
+    switch (l) {
+    case 0:
+      return "CALL\tLread";
+    case 1:
+      return "CALL\tLwrite";
+    case 2:
+      return "CALL\tLlength";
+    case 3:
+      return "CALL\tLstring";
+    case 4:
+      return "CALL\tBarray\t%d";
+    default:
+      return "_UNDEF_CALL_";
+    }
+  }
+  default:
+    return "_UNDEF_CODE_";
+  }
 }
 
 /* Disassembles the bytecode pool */

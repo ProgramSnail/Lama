@@ -1,6 +1,8 @@
 #include "types.h"
 
 #include "stack.h"
+#include "utils.h"
+#include "parser.h"
 #include "../../runtime/gc.h"
 
 #include <stdlib.h>
@@ -29,6 +31,7 @@ static void alloc_state(bytefile *bf, struct State* s) {
   s->bf = bf;
   s->is_closure_call = false;
   s->ip = bf->code_ptr;
+  s->instr_ip = bf->code_ptr;
   s->call_ip = NULL;
   s->current_line = 0;
 
@@ -44,6 +47,7 @@ void init_state(bytefile *bf, struct State* s) {
   __init();
   alloc_state(bf, s);
   __gc_stack_bottom = (size_t)s->sp;
+  __gc_stack_top = __gc_stack_bottom;
 
   s_pushn_nil(s, bf->global_area_size);
 
@@ -67,11 +71,15 @@ void cleanup_state(struct State* state) {
   __shutdown();
 }
 
+void s_failure(struct State *s, const char *msg) {
+  exec_failure(read_cmd(s->instr_ip), s->current_line, s->instr_ip - s->bf->code_ptr, msg);
+}
+
 // --- VarCategory ---
 
-enum VarCategory to_var_category(uint8_t category) {
+enum VarCategory to_var_category(struct State* s, uint8_t category) {
   if (category > 3) {
-    failure("unexpected variable category");
+    s_failure(s, "unexpected variable category");
   }
   return (enum VarCategory)category;
 }

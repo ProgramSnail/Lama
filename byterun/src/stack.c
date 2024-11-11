@@ -47,13 +47,13 @@ bool s_is_empty(struct State* s) {
 
 void **s_nth(struct State *s, aint n) {
   if (n < 0) {
-    failure("can't access stack by negative index");
+    s_failure(s, "can't access stack by negative index");
   }
   if (s->sp + n >= s_top(s)) {
-    failure("not enough elements in stack");
+    s_failure(s, "not enough elements in stack");
   }
   if (s->fp != NULL && s->sp + n >= f_locals(s->fp)) {
-    failure("not enough elements in function stack");
+    s_failure(s, "not enough elements in function stack");
   }
 
   return s->sp + n;
@@ -61,10 +61,10 @@ void **s_nth(struct State *s, aint n) {
 
 void** s_peek(struct State* s) {
   if (s->sp == s_top(s)) {
-    failure("empty stack");
+    s_failure(s, "empty stack");
   }
   if (s->fp != NULL && s->sp == f_locals(s->fp)) {
-    failure("empty function stack");
+    s_failure(s, "empty function stack");
   }
 
   return s->sp;
@@ -76,13 +76,14 @@ aint* s_peek_i(struct State* s) {
 
 void s_push(struct State *s, void *val) {
   if (s->sp == s->stack) {
-    failure("stack overflow");
+    s_failure(s, "stack overflow");
   }
 #ifdef DEBUG_VERSION
   printf("--> push\n");
 #endif
   --s->sp;
   *s->sp = val;
+  // __gc_stack_top= (size_t)(s->sp - 1);
 }
 
 void s_push_i(struct State *s, aint val) {
@@ -101,10 +102,10 @@ void s_pushn_nil(struct State *s, size_t n) {
 
 void* s_pop(struct State *s) {
   if (s->sp == s_top(s)) {
-    failure("empty stack");
+    s_failure(s, "empty stack");
   }
   if (s->fp != NULL && s->sp == f_locals(s->fp)) {
-    failure("empty function stack");
+    s_failure(s, "empty function stack");
   }
 #ifdef DEBUG_VERSION
   printf("--> pop\n");
@@ -112,7 +113,7 @@ void* s_pop(struct State *s) {
   void* value = *s->sp;
   *s->sp = NULL;
   ++s->sp;
-
+  // __gc_stack_top = (size_t)(s->sp - 1);
   return value;
 }
 
@@ -136,10 +137,10 @@ void s_enter_f(struct State *s, char *rp, bool is_closure_call, auint args_sz, a
 
   // check that params count is valid
   if (s->sp + (aint)args_sz - (is_closure_call ? 0 : 1) >= s_top(s)) {
-    failure("not enough parameters in stack");
+    s_failure(s, "not enough parameters in stack");
   }
   if (s->fp != NULL && s->sp + (aint)args_sz - (is_closure_call ? 0 : 1) >= f_locals(s->fp)) {
-    failure("not enough parameters in function stack");
+    s_failure(s, "not enough parameters in function stack");
   }
 
   void* closure = is_closure_call ? s_nth(s, args_sz) : NULL;
@@ -166,7 +167,7 @@ void s_enter_f(struct State *s, char *rp, bool is_closure_call, auint args_sz, a
 
 void s_exit_f(struct State *s) {
   if (s->fp == NULL) {
-    failure("exit: no func");
+    s_failure(s, "exit: no func");
   }
 
   struct Frame frame = *s->fp;
@@ -209,41 +210,41 @@ void print_stack(struct State* s) {
 void **var_by_category(struct State *s, enum VarCategory category,
                              int id) {
   if (id < 0) {
-    failure("can't read variable: negative id %i", id);
+    s_failure(s, "can't read variable: negative id"); // %i", id);
   }
   void **var = NULL;
   switch (category) {
   case VAR_GLOBAL:
     if (s->bf->global_area_size <= id) {
-      failure("can't read global: too big id, %i >= %ul", id, s->bf->global_area_size);
+      s_failure(s, "can't read global: too big id"); //, %i >= %ul", id, s->bf->global_area_size);
     }
     var = s->stack + STACK_SIZE - 1 - id;
     break;
   case VAR_LOCAL:
     if (s->fp == NULL) {
-      failure("can't read local outside of function");
+      s_failure(s, "can't read local outside of function");
     }
     if (f_locals_sz(s->fp) <= id) {
-      failure("can't read local: too big id, %i >= %ul", id, f_locals_sz(s->fp));
+      s_failure(s, "can't read local: too big id"); //, %i >= %ul", id, f_locals_sz(s->fp));
     }
     // printf("id is %i, local is %i, %i\n", id, UNBOX((auint)*((void**)f_locals(s->fp) + id)), f_locals(s->fp) - s->sp);
     var = f_locals(s->fp) + (f_locals_sz(s->fp) - id - 1);
     break;
   case VAR_ARGUMENT:
     if (s->fp == NULL) {
-      failure("can't read argument outside of function");
+      s_failure(s, "can't read argument outside of function");
     }
     if (f_args_sz(s->fp) <= id) {
-      failure("can't read arguments: too big id, %i >= %ul", id, f_args_sz(s->fp));
+      s_failure(s, "can't read arguments: too big id"); //, %i >= %ul", id, f_args_sz(s->fp));
     }
     var = f_args(s->fp) + (f_args_sz(s->fp) - id - 1);
     break;
   case VAR_CLOSURE:
     if (s->fp == NULL) {
-      failure("can't read closure parameter outside of function");
+      s_failure(s, "can't read closure parameter outside of function");
     }
     if (s->fp->closure == NULL) {
-      failure("can't read closure parameter not in closure");
+      s_failure(s, "can't read closure parameter not in closure");
     }
     if (UNBOXED(s->fp->closure)) { ASSERT_BOXED(".elem:1", s->fp->closure); }
     data* d =  TO_DATA(s->fp->closure);
@@ -252,7 +253,7 @@ void **var_by_category(struct State *s, enum VarCategory category,
     printf("id is %i, count is %i\n", id, count);
 #endif
     if (count <= id) {
-      failure("can't read arguments: too big id, %i >= %ul", id, count);
+      s_failure(s, "can't read arguments: too big id"); //, %i >= %ul", id, count);
     }
     return (void **)d->contents + id; // order is not important
     break;

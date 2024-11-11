@@ -27,4 +27,6 @@ char *get_public_name(bytefile *f, size_t i);
 /* Gets an offset for a public symbol */
 size_t get_public_offset(bytefile *f, size_t i);
 
+void exec_failure(const char *cmd, int line, aint offset, const char *msg);
+
 // ---

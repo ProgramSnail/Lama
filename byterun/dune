@@ -9,4 +9,4 @@
  (mode
   (promote (until-clean)))
  (action
-  (run gcc -Iinclude/ -g %{main} %{parser} %{utils} %{runtime} -o %{target})))
+  (run gcc -Iinclude/ -g -pg %{main} %{parser} %{utils} %{runtime} -o %{target})))

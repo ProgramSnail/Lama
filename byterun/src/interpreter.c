@@ -20,6 +20,7 @@ char *ip_read_string(char **ip, bytefile *bf) {
 }
 
 void run(bytefile *bf, int argc, char **argv) {
+  void *buffer[10000]; // FIXME: TODO: TMP
   struct State s;
   init_state(bf, &s);
 
@@ -82,10 +83,10 @@ void run(bytefile *bf, int argc, char **argv) {
     /* BINOP */
     case 0: // BINOP ops[l-1]
       if (l > OPS_SIZE) {
-        failure("BINOP: l > OPS_SIZE");
+        s_failure(&s, "undefined binop type index");
       }
       if (l < 1) {
-        failure("BINOP: l < 1");
+        s_failure(&s, "negative binop type index");
       }
       void *left = s_pop(&s);
       void *right = s_pop(&s);
@@ -115,9 +116,9 @@ void run(bytefile *bf, int argc, char **argv) {
 #endif
 
         if (args_count < 0) {
-          failure("SEXP: args count should be >= 0");
+          s_failure(&s, "args count should be >= 0");
         }
-        void **buffer = calloc(args_count + 1, sizeof(void *));
+        // void **buffer = calloc(args_count + 1, sizeof(void *));
 
         for (size_t i = 1; i <= args_count; ++i) {
           buffer[args_count - i] = s_pop(&s);
@@ -130,7 +131,7 @@ void run(bytefile *bf, int argc, char **argv) {
         s_push(&s, sexp);
         pop_extra_root(sexp);
 
-        free(buffer);
+        // free(buffer);
         break;
       }
 
@@ -155,7 +156,7 @@ void run(bytefile *bf, int argc, char **argv) {
         int jmp_p = ip_read_int(&s.ip);
 
         if (jmp_p < 0) {
-          failure("negative file offset jumps are not allowed");
+          s_failure(&s, "negative file offset jumps are not allowed");
         }
         s.ip = bf->code_ptr + jmp_p;
         break;
@@ -183,21 +184,26 @@ void run(bytefile *bf, int argc, char **argv) {
 
       case 9: // DUP
       {
-        s_push(&s, *s.sp);
+        s_push(&s, *s_peek(&s));
         break;
       }
 
       case 10: // SWAP
       {
-        if (s.sp + 1 >= s.stack + STACK_SIZE ||
-            (s.fp != NULL && s.sp + 1 >= f_locals(s.fp))) {
-          failure("can't SWAP: < 2 values on stack");
-        }
-        void *v = *s.sp;
-        push_extra_root(v);
-        *s.sp = *(s.sp + 1);
-        *(s.sp + 1) = v;
-        pop_extra_root(v);
+        void* x = s_pop(&s);
+        void* y = s_pop(&s);
+        s_push(&s, y);
+        s_push(&s, x);
+
+        // if (s.sp + 1 >= s.stack + STACK_SIZE ||
+        //     (s.fp != NULL && s.sp + 1 >= f_locals(s.fp))) {
+        //   s_failure(&s, "can't SWAP: < 2 values on stack");
+        // }
+        // void *v = *s.sp;
+        // push_extra_root(v);
+        // *s.sp = *(s.sp + 1);
+        // *(s.sp + 1) = v;
+        // pop_extra_root(v);
       } break;
 
       case 11: // ELEM
@@ -208,26 +214,26 @@ void run(bytefile *bf, int argc, char **argv) {
       } break;
 
       default:
-        failure("invalid opcode %d-%d\n", h, l);
+        s_failure(&s, "invalid opcode"); // %d-%d\n", h, l);
       }
       break;
 
     case 2: { // LD %d
       void **var_ptr =
-          var_by_category(&s, to_var_category(l), ip_read_int(&s.ip));
+          var_by_category(&s, to_var_category(&s, l), ip_read_int(&s.ip));
       s_push(&s, *var_ptr);
       break;
     }
 
     case 3: { // LDA %d
       void **var_ptr =
-          var_by_category(&s, to_var_category(l), ip_read_int(&s.ip));
+          var_by_category(&s, to_var_category(&s, l), ip_read_int(&s.ip));
       s_push(&s, var_ptr);
       break;
     }
     case 4: { // ST %d
       void **var_ptr =
-          var_by_category(&s, to_var_category(l), ip_read_int(&s.ip));
+          var_by_category(&s, to_var_category(&s, l), ip_read_int(&s.ip));
       *var_ptr = *s_peek(&s);
       break;
     }
@@ -238,7 +244,7 @@ void run(bytefile *bf, int argc, char **argv) {
         int jmp_p = ip_read_int(&s.ip);
 
         if (jmp_p < 0) {
-          failure("negative file offset jumps are not allowed");
+          s_failure(&s, "negative file offset jumps are not allowed");
         }
         if (UNBOX(s_pop_i(&s)) == 0) {
           s.ip = bf->code_ptr + jmp_p;
@@ -250,7 +256,7 @@ void run(bytefile *bf, int argc, char **argv) {
         int jmp_p = ip_read_int(&s.ip);
 
         if (jmp_p < 0) {
-          failure("negative file offset jumps are not allowed");
+          s_failure(&s, "negative file offset jumps are not allowed");
         }
         if (UNBOX(s_pop_i(&s)) != 0) {
           s.ip = bf->code_ptr + jmp_p;
@@ -262,7 +268,7 @@ void run(bytefile *bf, int argc, char **argv) {
         int args_sz = ip_read_int(&s.ip);
         int locals_sz = ip_read_int(&s.ip);
         if (s.fp != NULL && s.call_ip == NULL) {
-          failure("BEGIN: not after call");
+          s_failure(&s, "begin should only be called after call");
         }
         s_enter_f(&s, s.call_ip /*ip from call*/, s.is_closure_call, args_sz,
                   locals_sz);
@@ -274,7 +280,7 @@ void run(bytefile *bf, int argc, char **argv) {
         int args_sz = ip_read_int(&s.ip);
         int locals_sz = ip_read_int(&s.ip);
         if (s.fp != NULL && s.call_ip == NULL) {
-          failure("BEGIN: not after call");
+          s_failure(&s, "begin should only be called after call");
         }
         s_enter_f(&s, s.call_ip /*ip from call*/, s.is_closure_call, args_sz,
                   locals_sz);
@@ -290,7 +296,7 @@ void run(bytefile *bf, int argc, char **argv) {
           aint arg_id = ip_read_int(&s.ip);
 
           void **var_ptr =
-              var_by_category(&s, to_var_category(l), ip_read_int(&s.ip));
+              var_by_category(&s, to_var_category(&s, l), ip_read_int(&s.ip));
           s_push(&s, *var_ptr);
         }
         s_push(&s, bf->code_ptr + call_offset);
@@ -324,7 +330,7 @@ void run(bytefile *bf, int argc, char **argv) {
         s.call_ip = s.ip;
 
         if (call_p < 0) {
-          failure("negative file offset jumps are not allowed");
+          s_failure(&s, "negative file offset jumps are not allowed");
         }
         s.ip = bf->code_ptr + call_p;
         break;
@@ -360,7 +366,7 @@ void run(bytefile *bf, int argc, char **argv) {
         break;
 
       default:
-        failure("invalid opcode %d-%d\n", h, l);
+        s_failure(&s, "invalid opcode"); // %d-%d\n", h, l);
       }
       break;
 
@@ -389,7 +395,7 @@ void run(bytefile *bf, int argc, char **argv) {
         s_push_i(&s, Bclosure_tag_patt(s_pop(&s)));
         break;
       default:
-        failure("invalid opcode %d-%d\n", h, l);
+        s_failure(&s, "invalid opcode"); // %d-%d\n", h, l);
       }
       break;
 
@@ -417,10 +423,10 @@ void run(bytefile *bf, int argc, char **argv) {
       case 4: { // CALL Barray %d
         size_t elem_count = ip_read_int(&s.ip);
         if (elem_count < 0) {
-          failure("ARRAY: elements count should be >= 0");
+          s_failure(&s, "elements count should be >= 0");
         }
 
-        void **buffer = calloc(elem_count, sizeof(void *));
+        // void **buffer = calloc(elem_count, sizeof(void *));
         for (size_t i = 0; i < elem_count; ++i) {
           buffer[elem_count - i - 1] = s_pop(&s);
         }
@@ -430,17 +436,17 @@ void run(bytefile *bf, int argc, char **argv) {
         // s_popn(&s, elem_count);
         s_push(&s, array);
 
-        free(buffer);
+        // free(buffer);
         break;
       }
 
       default:
-        failure("invalid opcode %d-%d\n", h, l);
+        s_failure(&s, "invalid opcode"); // %d-%d\n", h, l);
       }
     } break;
 
     default:
-      failure("invalid opcode %d-%d\n", h, l);
+      s_failure(&s, "invalid opcode"); // %d-%d\n", h, l);
     }
 
     if (!call_happened) {

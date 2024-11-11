@@ -49,12 +49,15 @@ struct State {
 
   bool is_closure_call;
 
-  char *ip;      // instruction pointer
-  char *call_ip; // prev instruction pointer (to remember jmp locations)
+  char *ip;       // instruction pointer
+  char *instr_ip; // poiter to current instruction
+  char *call_ip;  // prev instruction pointer (to remember jmp locations)
 };
 
 void init_state(bytefile *bf, struct State *s);
 void cleanup_state(struct State *state);
+
+void s_failure(struct State *state, const char *msg);
 
 // ------ VarCategory ------
 
@@ -65,6 +68,4 @@ enum VarCategory {
   VAR_CLOSURE = 3
 };
 
-enum VarCategory to_var_category(uint8_t category);
-
-void print_stack(struct State *s);
+enum VarCategory to_var_category(struct State *s, uint8_t category);
