@@ -11,8 +11,8 @@ extern size_t __gc_stack_top, __gc_stack_bottom;
 
 // --- State ---
 
-static void alloc_state(bytefile *bf, struct State* s) {
-  // s->stack = calloc(STACK_SIZE + 1, sizeof(void*));
+static void init_state(bytefile *bf, struct State* s, void** stack) {
+  s->stack = stack;
   s->bf = bf;
   s->is_closure_call = false;
   s->ip = bf->code_ptr;
@@ -28,13 +28,13 @@ static void alloc_state(bytefile *bf, struct State* s) {
   s->fp = NULL;
 }
 
-void init_state(bytefile *bf, struct State* s) {
+void construct_state(bytefile *bf, struct State* s, void** stack) {
   __init();
-  alloc_state(bf, s);
+  init_state(bf, s, stack);
   __gc_stack_bottom = (size_t)s->sp;
   __gc_stack_top = __gc_stack_bottom;
 
-  s_pushn_nil(s, bf->global_area_size);
+  s_pushn_nil(bf->global_area_size);
 
 #ifdef DEBUG_VERSION
   print_stack(s);

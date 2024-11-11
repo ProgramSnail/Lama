@@ -8,23 +8,25 @@
 #include "types.h"
 #include "utils.h"
 
-int ip_read_int(char **ip) {
+struct State s;
+
+static inline int ip_read_int(char **ip) {
   *ip += sizeof(int);
   return *(int *)((*ip) - sizeof(int));
 }
 
-char ip_read_byte(char **ip) { return *(*ip)++; }
+static inline char ip_read_byte(char **ip) { return *(*ip)++; }
 
-char *ip_read_string(char **ip, bytefile *bf) {
+static inline char *ip_read_string(char **ip, bytefile *bf) {
   return get_string(bf, ip_read_int(ip));
 }
 
 const size_t BUFFER_SIZE = 1000;
 
 void run(bytefile *bf, int argc, char **argv) {
+  void *stack[STACK_SIZE];
   void *buffer[BUFFER_SIZE];
-  struct State s;
-  init_state(bf, &s);
+  construct_state(bf, &s, stack);
 
 #ifdef DEBUG_VERSION
   printf("--- interpreter run ---\n");
@@ -55,12 +57,12 @@ void run(bytefile *bf, int argc, char **argv) {
 
   // argc, argv
   {
-    s_push_i(&s, BOX(argc));
+    s_push_i(BOX(argc));
     void **argv_strs = calloc(argc, sizeof(void *));
     for (size_t i = 0; i < argc; ++i) {
       argv_strs[i] = Bstring((aint *)&argv[i]);
     }
-    s_push(&s, Barray((aint *)&argv_strs, argc));
+    s_push(Barray((aint *)&argv_strs, argc));
     free(argv_strs);
   }
 
@@ -90,20 +92,20 @@ void run(bytefile *bf, int argc, char **argv) {
       if (l < 1) {
         s_failure(&s, "negative binop type index");
       }
-      void *left = s_pop(&s);
-      void *right = s_pop(&s);
-      s_push(&s, (void *)ops_func[l - 1](right, left));
+      void *left = s_pop();
+      void *right = s_pop();
+      s_push((void *)ops_func[l - 1](right, left));
       break;
 
     case 1:
       switch (l) {
       case 0: // CONST %d
-        s_push_i(&s, BOX(ip_read_int(&s.ip)));
+        s_push_i(BOX(ip_read_int(&s.ip)));
         break;
 
       case 1: { // STRING %s
         void *str = ip_read_string(&s.ip, bf);
-        s_push(&s, Bstring((aint *)&str));
+        s_push(Bstring((aint *)&str));
         break;
       }
 
@@ -123,14 +125,14 @@ void run(bytefile *bf, int argc, char **argv) {
         void **opr_buffer = args_count >= BUFFER_SIZE ? calloc(args_count + 1, sizeof(void *)) : buffer;
 
         for (size_t i = 1; i <= args_count; ++i) {
-          opr_buffer[args_count - i] = s_pop(&s);
+          opr_buffer[args_count - i] = s_pop();
         }
         opr_buffer[args_count] = (void *)LtagHash((char *)name);
 
         void *sexp = Bsexp((aint *)opr_buffer, BOX(args_count + 1));
 
         push_extra_root(sexp);
-        s_push(&s, sexp);
+        s_push(sexp);
         pop_extra_root(sexp);
 
         if (args_count >= BUFFER_SIZE) {
@@ -141,18 +143,18 @@ void run(bytefile *bf, int argc, char **argv) {
 
       case 3: { // STI - write by ref (?)
         // NOTE: example not found, no checks done
-        void *elem = s_pop(&s);
-        void **addr = (void **)s_pop(&s);
+        void *elem = s_pop();
+        void **addr = (void **)s_pop();
         *addr = elem;
-        s_push(&s, elem);
+        s_push(elem);
         break;
       }
 
       case 4: { // STA - write to array elem
-        void *elem = s_pop(&s);
-        aint index = s_pop_i(&s);
-        void *data = s_pop(&s);
-        s_push(&s, Bsta(data, index, elem));
+        void *elem = s_pop();
+        aint index = s_pop_i();
+        void *data = s_pop();
+        s_push(Bsta(data, index, elem));
         break;
       }
 
@@ -167,37 +169,37 @@ void run(bytefile *bf, int argc, char **argv) {
       }
 
       case 6: // END
-        if (!s_is_empty(&s) && s.fp->prev_fp != 0) {
-          s.fp->ret = *s_peek(&s);
-          s_pop(&s);
+        if (!s_is_empty() && s.fp->prev_fp != 0) {
+          s.fp->ret = *s_peek();
+          s_pop();
         }
-        s_exit_f(&s);
+        s_exit_f();
         break;
 
       case 7: // RET
-        if (!s_is_empty(&s) && s.fp->prev_fp != 0) {
-          s.fp->ret = *s_peek(&s);
-          s_pop(&s);
+        if (!s_is_empty() && s.fp->prev_fp != 0) {
+          s.fp->ret = *s_peek();
+          s_pop();
         }
-        s_exit_f(&s);
+        s_exit_f();
         break;
 
       case 8: // DROP
-        s_pop(&s);
+        s_pop();
         break;
 
       case 9: // DUP
       {
-        s_push(&s, *s_peek(&s));
+        s_push(*s_peek());
         break;
       }
 
       case 10: // SWAP
       {
-        void* x = s_pop(&s);
-        void* y = s_pop(&s);
-        s_push(&s, y);
-        s_push(&s, x);
+        void* x = s_pop();
+        void* y = s_pop();
+        s_push(y);
+        s_push(x);
 
         // if (s.sp + 1 >= s.stack + STACK_SIZE ||
         //     (s.fp != NULL && s.sp + 1 >= f_locals(s.fp))) {
@@ -212,9 +214,9 @@ void run(bytefile *bf, int argc, char **argv) {
 
       case 11: // ELEM
       {
-        aint index = s_pop_i(&s);
-        void *data = s_pop(&s);
-        s_push(&s, Belem(data, index));
+        aint index = s_pop_i();
+        void *data = s_pop();
+        s_push(Belem(data, index));
       } break;
 
       default:
@@ -224,21 +226,21 @@ void run(bytefile *bf, int argc, char **argv) {
 
     case 2: { // LD %d
       void **var_ptr =
-          var_by_category(&s, to_var_category(&s, l), ip_read_int(&s.ip));
-      s_push(&s, *var_ptr);
+          var_by_category(to_var_category(l), ip_read_int(&s.ip));
+      s_push(*var_ptr);
       break;
     }
 
     case 3: { // LDA %d
       void **var_ptr =
-          var_by_category(&s, to_var_category(&s, l), ip_read_int(&s.ip));
-      s_push(&s, var_ptr);
+          var_by_category(to_var_category(l), ip_read_int(&s.ip));
+      s_push(*var_ptr);
       break;
     }
     case 4: { // ST %d
       void **var_ptr =
-          var_by_category(&s, to_var_category(&s, l), ip_read_int(&s.ip));
-      *var_ptr = *s_peek(&s);
+          var_by_category(to_var_category(l), ip_read_int(&s.ip));
+      *var_ptr = *s_peek();
       break;
     }
 
@@ -250,7 +252,7 @@ void run(bytefile *bf, int argc, char **argv) {
         if (jmp_p < 0) {
           s_failure(&s, "negative file offset jumps are not allowed");
         }
-        if (UNBOX(s_pop_i(&s)) == 0) {
+        if (UNBOX(s_pop_i()) == 0) {
           s.ip = bf->code_ptr + jmp_p;
         }
         break;
@@ -262,7 +264,7 @@ void run(bytefile *bf, int argc, char **argv) {
         if (jmp_p < 0) {
           s_failure(&s, "negative file offset jumps are not allowed");
         }
-        if (UNBOX(s_pop_i(&s)) != 0) {
+        if (UNBOX(s_pop_i()) != 0) {
           s.ip = bf->code_ptr + jmp_p;
         }
         break;
@@ -274,7 +276,7 @@ void run(bytefile *bf, int argc, char **argv) {
         if (s.fp != NULL && s.call_ip == NULL) {
           s_failure(&s, "begin should only be called after call");
         }
-        s_enter_f(&s, s.call_ip /*ip from call*/, s.is_closure_call, args_sz,
+        s_enter_f(s.call_ip /*ip from call*/, s.is_closure_call, args_sz,
                   locals_sz);
         break;
       }
@@ -286,7 +288,7 @@ void run(bytefile *bf, int argc, char **argv) {
         if (s.fp != NULL && s.call_ip == NULL) {
           s_failure(&s, "begin should only be called after call");
         }
-        s_enter_f(&s, s.call_ip /*ip from call*/, s.is_closure_call, args_sz,
+        s_enter_f(s.call_ip /*ip from call*/, s.is_closure_call, args_sz,
                   locals_sz);
         break;
       }
@@ -300,16 +302,16 @@ void run(bytefile *bf, int argc, char **argv) {
           aint arg_id = ip_read_int(&s.ip);
 
           void **var_ptr =
-              var_by_category(&s, to_var_category(&s, l), ip_read_int(&s.ip));
-          s_push(&s, *var_ptr);
+              var_by_category(to_var_category(l), ip_read_int(&s.ip));
+          s_push(*var_ptr);
         }
-        s_push(&s, bf->code_ptr + call_offset);
+        s_push(bf->code_ptr + call_offset);
 
         void *closure = Bclosure((aint *)s.sp, args_count);
 
         push_extra_root(closure);
-        s_popn(&s, args_count + 1);
-        s_push(&s, closure);
+        s_popn(args_count + 1);
+        s_push(closure);
         pop_extra_root(closure);
         break;
       }
@@ -321,7 +323,7 @@ void run(bytefile *bf, int argc, char **argv) {
         s.is_closure_call = true;
         s.call_ip = s.ip;
 
-        s.ip = Belem(*s_nth(&s, args_count), BOX(0)); // use offset instead ??
+        s.ip = Belem(*s_nth(args_count), BOX(0)); // use offset instead ??
         break;
       }
 
@@ -349,18 +351,18 @@ void run(bytefile *bf, int argc, char **argv) {
                UNBOX(LtagHash((char *)name)), args_count, s_peek(&s));
 #endif
 
-        s_push_i(&s, Btag(s_pop(&s), LtagHash((char *)name), BOX(args_count)));
+        s_push_i(Btag(s_pop(), LtagHash((char *)name), BOX(args_count)));
         break;
       }
 
       case 8: // ARRAY %d
-        s_push_i(&s, Barray_patt(s_pop(&s), BOX(ip_read_int(&s.ip))));
+        s_push_i(Barray_patt(s_pop(), BOX(ip_read_int(&s.ip))));
         break;
 
       case 9: {                        // FAIL %d %d
         int line = ip_read_int(&s.ip); // ??
         int col = ip_read_int(&s.ip);  // ??
-        Bmatch_failure(s_pop(&s), argv[0], BOX(line), BOX(col));
+        Bmatch_failure(s_pop(), argv[0], BOX(line), BOX(col));
         break;
       }
 
@@ -378,25 +380,25 @@ void run(bytefile *bf, int argc, char **argv) {
       // {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"}
       switch (l) {
       case 0: // =str
-        s_push_i(&s, Bstring_patt(s_pop(&s), s_pop(&s)));
+        s_push_i(Bstring_patt(s_pop(), s_pop()));
         break;
       case 1: // #string
-        s_push_i(&s, Bstring_tag_patt(s_pop(&s)));
+        s_push_i(Bstring_tag_patt(s_pop()));
         break;
       case 2: // #array
-        s_push_i(&s, Barray_tag_patt(s_pop(&s)));
+        s_push_i(Barray_tag_patt(s_pop()));
         break;
       case 3: // #sexp
-        s_push_i(&s, Bsexp_tag_patt(s_pop(&s)));
+        s_push_i(Bsexp_tag_patt(s_pop()));
         break;
       case 4: // #ref
-        s_push_i(&s, Bunboxed_patt(s_pop(&s)));
+        s_push_i(Bunboxed_patt(s_pop()));
         break;
       case 5: // #val
-        s_push_i(&s, Bboxed_patt(s_pop(&s)));
+        s_push_i(Bboxed_patt(s_pop()));
         break;
       case 6: // #fun
-        s_push_i(&s, Bclosure_tag_patt(s_pop(&s)));
+        s_push_i(Bclosure_tag_patt(s_pop()));
         break;
       default:
         s_failure(&s, "invalid opcode"); // %d-%d\n", h, l);
@@ -406,21 +408,21 @@ void run(bytefile *bf, int argc, char **argv) {
     case 7: {
       switch (l) {
       case 0: // CALL Lread
-        s_push_i(&s, Lread());
+        s_push_i(Lread());
         break;
 
       case 1: // CALL Lwrite
-        Lwrite(*s_peek_i(&s));
+        Lwrite(*s_peek_i());
         break;
 
       case 2: // CALL Llength
-        s_push_i(&s, Llength(s_pop(&s)));
+        s_push_i(Llength(s_pop()));
         break;
 
       case 3: { // CALL Lstring
-        void *val = s_pop(&s);
+        void *val = s_pop();
         void *str = Lstring((aint *)&val);
-        s_push(&s, str);
+        s_push(str);
         break;
       }
 
@@ -432,12 +434,12 @@ void run(bytefile *bf, int argc, char **argv) {
 
         void **opr_buffer = elem_count > BUFFER_SIZE ? calloc(elem_count, sizeof(void *)) : buffer;
         for (size_t i = 0; i < elem_count; ++i) {
-          opr_buffer[elem_count - i - 1] = s_pop(&s);
+          opr_buffer[elem_count - i - 1] = s_pop();
         }
 
         void *array =
             Barray((aint *)opr_buffer, BOX(elem_count)); // NOTE: not shure if elems should be added
-        s_push(&s, array);
+        s_push(array);
 
         if (elem_count > BUFFER_SIZE) {
           free(opr_buffer);

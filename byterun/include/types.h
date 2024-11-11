@@ -52,7 +52,7 @@ static inline void **f_args(struct Frame *fp) {
 // ------ State ------
 
 struct State {
-  void *stack[STACK_SIZE + 1];
+  void **stack;
   void **sp;        // stack pointer
   struct Frame *fp; // function frame pointer
   bytefile *bf;
@@ -65,7 +65,7 @@ struct State {
   char *call_ip;  // prev instruction pointer (to remember jmp locations)
 };
 
-void init_state(bytefile *bf, struct State *s);
+void construct_state(bytefile *bf, struct State *s, void **stack);
 void cleanup_state(struct State *state);
 
 static inline void s_failure(struct State *s, const char *msg) {
@@ -82,10 +82,11 @@ enum VarCategory {
   VAR_CLOSURE = 3
 };
 
-static inline enum VarCategory to_var_category(struct State *s,
-                                               uint8_t category) {
+extern struct State s;
+
+static inline enum VarCategory to_var_category(uint8_t category) {
   if (category > 3) {
-    s_failure(s, "unexpected variable category");
+    s_failure(&s, "unexpected variable category");
   }
   return (enum VarCategory)category;
 }

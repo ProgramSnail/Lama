@@ -7,94 +7,92 @@
 
 #include "stdlib.h"
 
+extern struct State s;
+
 extern size_t __gc_stack_top, __gc_stack_bottom;
 
-static inline void **s_top(struct State *s) {
-  return s->stack + STACK_SIZE - s->bf->global_area_size;
+static inline void **s_top() {
+  return s.stack + STACK_SIZE - s.bf->global_area_size;
 }
 
-static inline bool s_is_empty(struct State *s) {
-  if (s->sp == s_top(s) || (s->fp != NULL && s->sp == f_locals(s->fp))) {
+static inline bool s_is_empty() {
+  if (s.sp == s_top() || (s.fp != NULL && s.sp == f_locals(s.fp))) {
     return true;
   }
   return false;
 }
 
-static inline void **s_nth(struct State *s, aint n) {
+static inline void **s_nth(aint n) {
   if (n < 0) {
-    s_failure(s, "can't access stack by negative index");
+    s_failure(&s, "can't access stack by negative index");
   }
-  if (s->sp + n >= s_top(s)) {
-    s_failure(s, "not enough elements in stack");
+  if (s.sp + n >= s_top()) {
+    s_failure(&s, "not enough elements in stack");
   }
-  if (s->fp != NULL && s->sp + n >= f_locals(s->fp)) {
-    s_failure(s, "not enough elements in function stack");
+  if (s.fp != NULL && s.sp + n >= f_locals(s.fp)) {
+    s_failure(&s, "not enough elements in function stack");
   }
 
-  return s->sp + n;
+  return s.sp + n;
 }
 
-static inline void **s_peek(struct State *s) {
-  if (s->sp == s_top(s)) {
-    s_failure(s, "empty stack");
+static inline void **s_peek() {
+  if (s.sp == s_top()) {
+    s_failure(&s, "empty stack");
   }
-  if (s->fp != NULL && s->sp == f_locals(s->fp)) {
-    s_failure(s, "empty function stack");
+  if (s.fp != NULL && s.sp == f_locals(s.fp)) {
+    s_failure(&s, "empty function stack");
   }
 
-  return s->sp;
+  return s.sp;
 }
 
-static inline aint *s_peek_i(struct State *s) { return (aint *)s_peek(s); }
+static inline aint *s_peek_i() { return (aint *)s_peek(); }
 
-static inline void s_push(struct State *s, void *val) {
-  if (s->sp == s->stack) {
-    s_failure(s, "stack overflow");
+static inline void s_push(void *val) {
+  if (s.sp == s.stack) {
+    s_failure(&s, "stack overflow");
   }
 #ifdef DEBUG_VERSION
   printf("--> push\n");
 #endif
-  --s->sp;
-  *s->sp = val;
-  __gc_stack_top = (size_t)(s->sp);
-  __gc_stack_top -= __gc_stack_top & 0xF;
+  --s.sp;
+  *s.sp = val;
+  __gc_stack_top = (size_t)(s.sp) - (size_t)(s.sp) & 0xF;
 }
 
-static inline void s_push_i(struct State *s, aint val) {
-  s_push(s, (void *)val);
-}
+static inline void s_push_i(aint val) { s_push((void *)val); }
 
-static inline void s_push_nil(struct State *s) { s_push(s, NULL); }
+static inline void s_push_nil() { s_push(NULL); }
 
-static inline void s_pushn_nil(struct State *s, size_t n) {
+static inline void s_pushn_nil(size_t n) {
   for (size_t i = 0; i < n; ++i) {
-    s_push(s, NULL);
+    s_push(NULL);
   }
 }
 
-static inline void *s_pop(struct State *s) {
-  if (s->sp == s_top(s)) {
-    s_failure(s, "empty stack");
+static inline void *s_pop() {
+  if (s.sp == s_top()) {
+    s_failure(&s, "empty stack");
   }
-  if (s->fp != NULL && s->sp == f_locals(s->fp)) {
-    s_failure(s, "empty function stack");
+  if (s.fp != NULL && s.sp == f_locals(s.fp)) {
+    s_failure(&s, "empty function stack");
   }
 #ifdef DEBUG_VERSION
   printf("--> pop\n");
 #endif
-  void *value = *s->sp;
-  *s->sp = NULL;
-  ++s->sp;
-  __gc_stack_top = (size_t)(s->sp);
-  __gc_stack_top -= __gc_stack_top & 0xF;
+  void *value = *s.sp;
+  *s.sp = NULL;
+  ++s.sp;
+  __gc_stack_top = (size_t)(s.sp) - (size_t)(s.sp) & 0xF;
   return value;
 }
 
-static inline aint s_pop_i(struct State *s) { return (aint)s_pop(s); }
+static inline aint s_pop_i() { return (aint)s_pop(); }
 
-static inline void s_popn(struct State *s, size_t n) {
+static inline void s_popn(size_t n) {
   for (size_t i = 0; i < n; ++i) {
-    s_pop(s);
+    s_pop();
   }
 }
 
@@ -106,79 +104,79 @@ static inline void s_popn(struct State *s, size_t n) {
 //
 // where |> defines corresponding frame pointer, | is stack pointer
 // location before / after new frame added
-static inline void s_enter_f(struct State *s, char *rp, bool is_closure_call,
-                             auint args_sz, auint locals_sz) {
+static inline void s_enter_f(char *rp, bool is_closure_call, auint args_sz,
+                             auint locals_sz) {
 #ifdef DEBUG_VERSION
   printf("-> %i args sz\n", args_sz);
   printf("-> %i locals sz\n", locals_sz);
 #endif
 
   // check that params count is valid
-  if (s->sp + (aint)args_sz - (is_closure_call ? 0 : 1) >= s_top(s)) {
-    s_failure(s, "not enough parameters in stack");
+  if (s.sp + (aint)args_sz - (is_closure_call ? 0 : 1) >= s_top()) {
+    s_failure(&s, "not enough parameters in stack");
   }
-  if (s->fp != NULL &&
-      s->sp + (aint)args_sz - (is_closure_call ? 0 : 1) >= f_locals(s->fp)) {
-    s_failure(s, "not enough parameters in function stack");
+  if (s.fp != NULL &&
+      s.sp + (aint)args_sz - (is_closure_call ? 0 : 1) >= f_locals(s.fp)) {
+    s_failure(&s, "not enough parameters in function stack");
   }
 
-  void *closure = is_closure_call ? s_nth(s, args_sz) : NULL;
+  void *closure = is_closure_call ? s_nth(args_sz) : NULL;
 
   // s_push_nil(s); // sp contains value, frame starts with next value
-  s_pushn_nil(s, frame_sz());
+  s_pushn_nil(frame_sz());
 
   // create frame
   struct Frame frame = {
       .closure = closure,
       .ret = NULL, // field in frame itself
       .rp = rp,
-      .prev_fp = (void **)s->fp,
+      .prev_fp = (void **)s.fp,
       .args_sz_box = BOX(args_sz),
       .locals_sz_box = BOX(locals_sz),
   };
 
   // put frame on stack
-  s->fp = (struct Frame *)s->sp;
-  (*s->fp) = frame;
+  s.fp = (struct Frame *)s.sp;
+  (*s.fp) = frame;
 
-  s_pushn_nil(s, locals_sz);
+  s_pushn_nil(locals_sz);
 }
 
-static inline void s_exit_f(struct State *s) {
-  if (s->fp == NULL) {
-    s_failure(s, "exit: no func");
+static inline void s_exit_f() {
+  if (s.fp == NULL) {
+    s_failure(&s, "exit: no func");
   }
 
-  struct Frame frame = *s->fp;
+  struct Frame frame = *s.fp;
   push_extra_root((void **)&frame.ret);
 
   // drop stack entities, locals, frame
-  size_t to_pop = f_args(s->fp) - s->sp;
-  s->fp = (struct Frame *)f_prev_fp(&frame);
+  size_t to_pop = f_args(s.fp) - s.sp;
+  s.fp = (struct Frame *)f_prev_fp(&frame);
 #ifdef DEBUG_VERSION
   printf("-> %zu to pop\n", to_pop);
 #endif
-  s_popn(s, to_pop);
+  s_popn(to_pop);
 
   // drop args
 #ifdef DEBUG_VERSION
   printf("-> + %zu to pop\n", f_args_sz(&frame));
 #endif
-  s_popn(s, f_args_sz(&frame));
+  s_popn(f_args_sz(&frame));
 
   // save returned value, not in main
   if (frame.prev_fp != 0) {
-    s_push(s, frame.ret);
+    s_push(frame.ret);
   }
 
-  s->ip = frame.rp;
+  s.ip = frame.rp;
 
   pop_extra_root((void **)&frame.ret);
 }
 
-static inline void print_stack(struct State *s) {
-  printf("stack (%i) is\n[", s->stack + STACK_SIZE - s->sp);
-  for (void **x = s->stack + STACK_SIZE - 1; x >= s->sp; --x) {
+static inline void print_stack() {
+  printf("stack (%i) is\n[", s.stack + STACK_SIZE - s.sp);
+  for (void **x = s.stack + STACK_SIZE - 1; x >= s.sp; --x) {
     printf("%li ", (long)UNBOX(*x));
   }
   printf("]\n");
@@ -186,60 +184,59 @@ static inline void print_stack(struct State *s) {
 
 // --- category ---
 
-static inline void **var_by_category(struct State *s, enum VarCategory category,
-                                     int id) {
+static inline void **var_by_category(enum VarCategory category, int id) {
   if (id < 0) {
-    s_failure(s, "can't read variable: negative id"); // %i", id);
+    s_failure(&s, "can't read variable: negative id"); // %i", id);
   }
   void **var = NULL;
   switch (category) {
   case VAR_GLOBAL:
-    if (s->bf->global_area_size <= id) {
-      s_failure(s,
+    if (s.bf->global_area_size <= id) {
+      s_failure(&s,
                 "can't read global: too big id"); //, %i >= %ul", id,
-                                                  // s->bf->global_area_size);
+                                                  // s.bf->global_area_size);
     }
-    var = s->stack + STACK_SIZE - 1 - id;
+    var = s.stack + STACK_SIZE - 1 - id;
     break;
   case VAR_LOCAL:
-    if (s->fp == NULL) {
-      s_failure(s, "can't read local outside of function");
+    if (s.fp == NULL) {
+      s_failure(&s, "can't read local outside of function");
     }
-    if (f_locals_sz(s->fp) <= id) {
-      s_failure(s, "can't read local: too big id"); //, %i >= %ul", id,
-                                                    // f_locals_sz(s->fp));
+    if (f_locals_sz(s.fp) <= id) {
+      s_failure(&s, "can't read local: too big id"); //, %i >= %ul", id,
+                                                     // f_locals_sz(s.fp));
     }
     // printf("id is %i, local is %i, %i\n", id,
-    // UNBOX((auint)*((void**)f_locals(s->fp) + id)), f_locals(s->fp) - s->sp);
-    var = f_locals(s->fp) + (f_locals_sz(s->fp) - id - 1);
+    // UNBOX((auint)*((void**)f_locals(s.fp) + id)), f_locals(s.fp) - s.sp);
+    var = f_locals(s.fp) + (f_locals_sz(s.fp) - id - 1);
     break;
   case VAR_ARGUMENT:
-    if (s->fp == NULL) {
-      s_failure(s, "can't read argument outside of function");
+    if (s.fp == NULL) {
+      s_failure(&s, "can't read argument outside of function");
     }
-    if (f_args_sz(s->fp) <= id) {
-      s_failure(s, "can't read arguments: too big id"); //, %i >= %ul", id,
-                                                        // f_args_sz(s->fp));
+    if (f_args_sz(s.fp) <= id) {
+      s_failure(&s, "can't read arguments: too big id"); //, %i >= %ul", id,
+                                                         // f_args_sz(s.fp));
     }
-    var = f_args(s->fp) + (f_args_sz(s->fp) - id - 1);
+    var = f_args(s.fp) + (f_args_sz(s.fp) - id - 1);
     break;
   case VAR_CLOSURE:
-    if (s->fp == NULL) {
-      s_failure(s, "can't read closure parameter outside of function");
+    if (s.fp == NULL) {
+      s_failure(&s, "can't read closure parameter outside of function");
     }
-    if (s->fp->closure == NULL) {
-      s_failure(s, "can't read closure parameter not in closure");
+    if (s.fp->closure == NULL) {
+      s_failure(&s, "can't read closure parameter not in closure");
     }
-    if (UNBOXED(s->fp->closure)) {
-      s_failure(s, "not boxed value expected in closure index");
+    if (UNBOXED(s.fp->closure)) {
+      s_failure(&s, "not boxed value expected in closure index");
     }
-    data *d = TO_DATA(s->fp->closure);
+    data *d = TO_DATA(s.fp->closure);
     size_t count = get_len(d) - 1;
 #ifdef DEBUG_VERSION
     printf("id is %i, count is %i\n", id, count);
 #endif
     if (count <= id) {
-      s_failure(s,
+      s_failure(&s,
                 "can't read arguments: too big id"); //, %i >= %ul", id, count);
     }
     return (void **)d->contents + id; // order is not important
