@@ -24,9 +24,9 @@ static inline char *ip_read_string(char **ip, bytefile *bf) {
 const size_t BUFFER_SIZE = 1000;
 
 void run(bytefile *bf, int argc, char **argv) {
-  void *stack[STACK_SIZE];
+  size_t stack[STACK_SIZE];
   void *buffer[BUFFER_SIZE];
-  construct_state(bf, &s, stack);
+  construct_state(bf, &s, (void**)stack);
 
 #ifdef DEBUG_VERSION
   printf("--- interpreter run ---\n");
@@ -74,6 +74,15 @@ void run(bytefile *bf, int argc, char **argv) {
     // char *before_op_ip = s.ip; // save to set s.prev_ip
     bool call_happened = false;
 
+    if (s.ip >= bf->code_ptr + bf->code_size) {
+      s_failure(&s, "instruction pointer is out of range (>= size)");
+    }
+
+    if (s.ip < bf->code_ptr) {
+      s_failure(&s, "instruction pointer is out of range (< 0)");
+    }
+
+    s.instr_ip = s.ip;
     char x = ip_read_byte(&s.ip), h = (x & 0xF0) >> 4, l = x & 0x0F;
 
 #ifdef DEBUG_VERSION

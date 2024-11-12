@@ -26,12 +26,16 @@ bytefile* read_file (char *fname) {
   }
 
   long size = ftell (f);
-  file = (bytefile*) malloc (size + sizeof(void*) * 4);
+  long additional_size = sizeof(void*) * 4 + sizeof(int);
+  file = (bytefile*) malloc (size + additional_size); // file itself + additional data
+
+  char* file_begin = (char*)file + additional_size;
+  char* file_end = file_begin + size;
 
   if (file == 0) {
     failure ("unable to allocate memory to store file data\n");
   }
-  
+
   rewind (f);
 
   if (size != fread (&file->stringtab_size, 1, size, f)) {
@@ -39,12 +43,25 @@ bytefile* read_file (char *fname) {
   }
   
   fclose (f);
-  
-  file->string_ptr  = &file->buffer [file->public_symbols_number * 2 * sizeof(int)];
+
+  long public_symbols_size = file->public_symbols_number * 2 * sizeof(int);
+  if (file->buffer + public_symbols_size >= file_end) {
+    failure ("public symbols are out of the file size\n");
+  }
+  if (file->string_ptr + file->stringtab_size > file_end) {
+    failure ("strings table is out of the file size\n");
+  }
+  if (file->code_size < 0 || public_symbols_size < 0 || file->stringtab_size < 0) {
+    failure ("file zones sizes should be >= 0\n");
+  }
+
+  file->string_ptr  = &file->buffer [public_symbols_size];
   file->public_ptr  = (int*) file->buffer;
   file->code_ptr    = &file->string_ptr [file->stringtab_size];
   file->global_ptr  = (int*) calloc (file->global_area_size, sizeof (int));
-  
+
+  file->code_size = size - public_symbols_size - file->stringtab_size;
+
   return file;
 }
 

@@ -15,6 +15,7 @@ int main(int argc, char** argv) {
 #endif
   run(f, argc - 1, argv + 1);
 
+  free(f->global_ptr);
   free(f);
 
   return 0;

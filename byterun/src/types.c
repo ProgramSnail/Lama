@@ -24,6 +24,8 @@ static void init_state(bytefile *bf, struct State* s, void** stack) {
     s->stack[i] = NULL;
   }
 
+  // printf("%p:%zu - %zu", s->stack, (size_t)s->stack, (size_t)s->stack & 0xF);
+
   s->sp = s->stack + STACK_SIZE; // [top -> bottom] stack
   s->fp = NULL;
 }
