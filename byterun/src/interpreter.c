@@ -11,14 +11,22 @@
 struct State s;
 
 static inline int ip_read_int(char **ip) {
+  if (*ip + sizeof(int) > s.bf->code_ptr + s.bf->code_size) {
+    failure("last command is invalid, int parameter can not be read\n");
+  }
   *ip += sizeof(int);
   return *(int *)((*ip) - sizeof(int));
 }
 
-static inline char ip_read_byte(char **ip) { return *(*ip)++; }
+static inline uint8_t ip_read_byte(char **ip) {
+  if (*ip + sizeof(char) > s.bf->code_ptr + s.bf->code_size) {
+    failure("last command is invalid, byte parameter can not be read\n");
+  }
+  return *(*ip)++;
+}
 
-static inline char *ip_read_string(char **ip, bytefile *bf) {
-  return get_string(bf, ip_read_int(ip));
+static inline const char *ip_read_string(char **ip) {
+  return get_string(s.bf, ip_read_int(ip));
 }
 
 const size_t BUFFER_SIZE = 1000;
@@ -26,44 +34,43 @@ const size_t BUFFER_SIZE = 1000;
 void run(bytefile *bf, int argc, char **argv) {
   size_t stack[STACK_SIZE];
   void *buffer[BUFFER_SIZE];
-  construct_state(bf, &s, (void**)stack);
+  construct_state(bf, &s, (void **)stack);
 
 #ifdef DEBUG_VERSION
   printf("--- interpreter run ---\n");
 #endif
 
-  const size_t OPS_SIZE = 13;
-  const char *ops[] = {
-      "+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
-  aint (*ops_func[])(void *, void *) = {
-      &Ls__Infix_43,   // +
-      &Ls__Infix_45,   // -
-      &Ls__Infix_42,   // *
-      &Ls__Infix_47,   // /
-      &Ls__Infix_37,   // %
-      &Ls__Infix_60,   // <
-      &Ls__Infix_6061, // <=
-      &Ls__Infix_62,   // >
-      &Ls__Infix_6261, // >=
-      &Ls__Infix_6161, // ==
-      &Ls__Infix_3361, // !=
-      &Ls__Infix_3838, // &&
-      &Ls__Infix_3333, // !!
-  };
+  // const char *ops[] = {
+  //     "+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
+  // aint (*ops_func[])(void *, void *) = {
+  //     &Ls__Infix_43,   // +
+  //     &Ls__Infix_45,   // -
+  //     &Ls__Infix_42,   // *
+  //     &Ls__Infix_47,   // /
+  //     &Ls__Infix_37,   // %
+  //     &Ls__Infix_60,   // <
+  //     &Ls__Infix_6061, // <=
+  //     &Ls__Infix_62,   // >
+  //     &Ls__Infix_6261, // >=
+  //     &Ls__Infix_6161, // ==
+  //     &Ls__Infix_3361, // !=
+  //     &Ls__Infix_3838, // &&
+  //     &Ls__Infix_3333, // !!
+  // };
 
-  const size_t PATS_SIZE = 7;
-  const char *pats[] = {"=str", "#string", "#array", "#sexp",
-                        "#ref", "#val",    "#fun"};
+  // const char *pats[] = {"=str", "#string", "#array", "#sexp",
+  //                       "#ref", "#val",    "#fun"};
 
   // argc, argv
   {
     s_push_i(BOX(argc));
-    void **argv_strs = calloc(argc, sizeof(void *));
     for (size_t i = 0; i < argc; ++i) {
-      argv_strs[i] = Bstring((aint *)&argv[i]);
+      s_push(Bstring((aint *)&argv[argc - i - 1]));
     }
-    s_push(Barray((aint *)&argv_strs, argc));
-    free(argv_strs);
+    s_push(Barray((aint *)s_peek(), argc));
+    void *argv_elem = s_pop();
+    s_popn(argc);
+    s_push(argv_elem);
   }
 
 #ifdef DEBUG_VERSION
@@ -83,55 +90,93 @@ void run(bytefile *bf, int argc, char **argv) {
     }
 
     s.instr_ip = s.ip;
-    char x = ip_read_byte(&s.ip), h = (x & 0xF0) >> 4, l = x & 0x0F;
+    uint8_t x = ip_read_byte(&s.ip), h = (x & 0xF0) >> 4, l = x & 0x0F;
 
 #ifdef DEBUG_VERSION
     printf("0x%.8x\n", s.ip - bf->code_ptr - 1);
 #endif
 
     switch (h) {
-    case 15:
+    case CMD_EXIT:
       goto stop;
 
     /* BINOP */
-    case 0: // BINOP ops[l-1]
-      if (l > OPS_SIZE) {
-        s_failure(&s, "undefined binop type index");
-      }
-      if (l < 1) {
-        s_failure(&s, "negative binop type index");
-      }
+    case CMD_BINOP: { // BINOP ops[l-1]
       void *left = s_pop();
       void *right = s_pop();
-      s_push((void *)ops_func[l - 1](right, left));
+      switch ((int)l) {
+      case CMD_BINOP_ADD: // +
+        s_push_i(Ls__Infix_43(right, left));
+        break;
+      case CMD_BINOP_SUB: // -
+        s_push_i(Ls__Infix_45(right, left));
+        break;
+      case CMD_BINOP_MULT: // *
+        s_push_i(Ls__Infix_42(right, left));
+        break;
+      case CMD_BINOP_DIV: // /
+        s_push_i(Ls__Infix_47(right, left));
+        break;
+      case CMD_BINOP_MOD: // %
+        s_push_i(Ls__Infix_37(right, left));
+        break;
+      case CMD_BINOP_LEQ: // <
+        s_push_i(Ls__Infix_60(right, left));
+        break;
+      case CMD_BINOP_LT: // <=
+        s_push_i(Ls__Infix_6061(right, left));
+        break;
+      case CMD_BINOP_GT: // >
+        s_push_i(Ls__Infix_62(right, left));
+        break;
+      case CMD_BINOP_GEQ: // >=
+        s_push_i(Ls__Infix_6261(right, left));
+        break;
+      case CMD_BINOP_EQ: // ==
+        s_push_i(Ls__Infix_6161(right, left));
+        break;
+      case CMD_BINOP_NEQ: // !=
+        s_push_i(Ls__Infix_3361(right, left));
+        break;
+      case CMD_BINOP_AND: // &&
+        s_push_i(Ls__Infix_3838(right, left));
+        break;
+      case CMD_BINOP_OR: // !!
+        s_push_i(Ls__Infix_3333(right, left));
+        break;
+      default:
+        s_failure(&s, "invalid opcode"); // %d-%d\n", h, l);
+        break;
+      }
       break;
+    }
 
-    case 1:
+    case CMD_BASIC:
       switch (l) {
-      case 0: // CONST %d
+      case CMD_BASIC_CONST: // CONST %d
         s_push_i(BOX(ip_read_int(&s.ip)));
         break;
 
-      case 1: { // STRING %s
-        void *str = ip_read_string(&s.ip, bf);
+      case CMD_BASIC_STRING: { // STRING %s
+        void *str = (void *)ip_read_string(&s.ip);
         s_push(Bstring((aint *)&str));
         break;
       }
 
-      case 2: { // SEXP %s %d // create sexpr with tag=%s and %d elements from
-                // stack
+      case CMD_BASIC_SEXP: { // SEXP %s %d // create sexpr with tag=%s and %d
+                             // elements from
+                             // stack
         // params read from stack
-        const char *name = ip_read_string(&s.ip, bf);
-        aint args_count = ip_read_int(&s.ip);
+        const char *name = ip_read_string(&s.ip);
+        size_t args_count = ip_read_int(&s.ip);
 #ifdef DEBUG_VERSION
         printf("tag hash is %i, n is %i\n", UNBOX(LtagHash((char *)name)),
                args_count);
 #endif
 
-        if (args_count < 0) {
-          s_failure(&s, "args count should be >= 0");
-        }
-        void **opr_buffer = args_count >= BUFFER_SIZE ? calloc(args_count + 1, sizeof(void *)) : buffer;
+        void **opr_buffer = args_count >= BUFFER_SIZE
+                                ? alloc((args_count + 1) * sizeof(void *))
+                                : buffer;
 
         for (size_t i = 1; i <= args_count; ++i) {
           opr_buffer[args_count - i] = s_pop();
@@ -140,17 +185,11 @@ void run(bytefile *bf, int argc, char **argv) {
 
         void *sexp = Bsexp((aint *)opr_buffer, BOX(args_count + 1));
 
-        push_extra_root(sexp);
         s_push(sexp);
-        pop_extra_root(sexp);
-
-        if (args_count >= BUFFER_SIZE) {
-          free(opr_buffer);
-        }
         break;
       }
 
-      case 3: { // STI - write by ref (?)
+      case CMD_BASIC_STI: { // STI - write by ref (?)
         // NOTE: example not found, no checks done
         void *elem = s_pop();
         void **addr = (void **)s_pop();
@@ -159,7 +198,7 @@ void run(bytefile *bf, int argc, char **argv) {
         break;
       }
 
-      case 4: { // STA - write to array elem
+      case CMD_BASIC_STA: { // STA - write to array elem
         void *elem = s_pop();
         aint index = s_pop_i();
         void *data = s_pop();
@@ -167,17 +206,17 @@ void run(bytefile *bf, int argc, char **argv) {
         break;
       }
 
-      case 5: { // JMP 0x%.8x
-        int jmp_p = ip_read_int(&s.ip);
+      case CMD_BASIC_JMP: { // JMP 0x%.8x
+        uint jmp_p = ip_read_int(&s.ip);
 
-        if (jmp_p < 0) {
-          s_failure(&s, "negative file offset jumps are not allowed");
+        if (jmp_p >= bf->code_size) {
+          s_failure(&s, "jump out of file");
         }
         s.ip = bf->code_ptr + jmp_p;
         break;
       }
 
-      case 6: // END
+      case CMD_BASIC_END: // END
         if (!s_is_empty() && s.fp->prev_fp != 0) {
           s.fp->ret = *s_peek();
           s_pop();
@@ -185,7 +224,7 @@ void run(bytefile *bf, int argc, char **argv) {
         s_exit_f();
         break;
 
-      case 7: // RET
+      case CMD_BASIC_RET: // RET
         if (!s_is_empty() && s.fp->prev_fp != 0) {
           s.fp->ret = *s_peek();
           s_pop();
@@ -193,35 +232,25 @@ void run(bytefile *bf, int argc, char **argv) {
         s_exit_f();
         break;
 
-      case 8: // DROP
+      case CMD_BASIC_DROP: // DROP
         s_pop();
         break;
 
-      case 9: // DUP
+      case CMD_BASIC_DUP: // DUP
       {
         s_push(*s_peek());
         break;
       }
 
-      case 10: // SWAP
+      case CMD_BASIC_SWAP: // SWAP
       {
-        void* x = s_pop();
-        void* y = s_pop();
+        void *x = s_pop();
+        void *y = s_pop();
         s_push(y);
         s_push(x);
-
-        // if (s.sp + 1 >= s.stack + STACK_SIZE ||
-        //     (s.fp != NULL && s.sp + 1 >= f_locals(s.fp))) {
-        //   s_failure(&s, "can't SWAP: < 2 values on stack");
-        // }
-        // void *v = *s.sp;
-        // push_extra_root(v);
-        // *s.sp = *(s.sp + 1);
-        // *(s.sp + 1) = v;
-        // pop_extra_root(v);
       } break;
 
-      case 11: // ELEM
+      case CMD_BASIC_ELEM: // ELEM
       {
         aint index = s_pop_i();
         void *data = s_pop();
@@ -233,33 +262,30 @@ void run(bytefile *bf, int argc, char **argv) {
       }
       break;
 
-    case 2: { // LD %d
-      void **var_ptr =
-          var_by_category(to_var_category(l), ip_read_int(&s.ip));
+    case CMD_LD: { // LD %d
+      void **var_ptr = var_by_category(to_var_category(l), ip_read_int(&s.ip));
       s_push(*var_ptr);
       break;
     }
 
-    case 3: { // LDA %d
-      void **var_ptr =
-          var_by_category(to_var_category(l), ip_read_int(&s.ip));
+    case CMD_LDA: { // LDA %d
+      void **var_ptr = var_by_category(to_var_category(l), ip_read_int(&s.ip));
       s_push(*var_ptr);
       break;
     }
-    case 4: { // ST %d
-      void **var_ptr =
-          var_by_category(to_var_category(l), ip_read_int(&s.ip));
+    case CMD_ST: { // ST %d
+      void **var_ptr = var_by_category(to_var_category(l), ip_read_int(&s.ip));
       *var_ptr = *s_peek();
       break;
     }
 
-    case 5:
+    case CMD_CTRL:
       switch (l) {
-      case 0: { // CJMPz 0x%.8x
-        int jmp_p = ip_read_int(&s.ip);
+      case CMD_CTRL_CJMPz: { // CJMPz 0x%.8x
+        uint jmp_p = ip_read_int(&s.ip);
 
-        if (jmp_p < 0) {
-          s_failure(&s, "negative file offset jumps are not allowed");
+        if (jmp_p >= bf->code_size) {
+          s_failure(&s, "jump out of file");
         }
         if (UNBOX(s_pop_i()) == 0) {
           s.ip = bf->code_ptr + jmp_p;
@@ -267,11 +293,11 @@ void run(bytefile *bf, int argc, char **argv) {
         break;
       }
 
-      case 1: { // CJMPnz  0x%.8x
-        int jmp_p = ip_read_int(&s.ip);
+      case CMD_CTRL_CJMPnz: { // CJMPnz  0x%.8x
+        uint jmp_p = ip_read_int(&s.ip);
 
-        if (jmp_p < 0) {
-          s_failure(&s, "negative file offset jumps are not allowed");
+        if (jmp_p >= bf->code_size) {
+          s_failure(&s, "jump out of file");
         }
         if (UNBOX(s_pop_i()) != 0) {
           s.ip = bf->code_ptr + jmp_p;
@@ -279,7 +305,7 @@ void run(bytefile *bf, int argc, char **argv) {
         break;
       }
 
-      case 2: { // BEGIN %d %d // function begin
+      case CMD_CTRL_BEGIN: { // BEGIN %d %d // function begin
         int args_sz = ip_read_int(&s.ip);
         int locals_sz = ip_read_int(&s.ip);
         if (s.fp != NULL && s.call_ip == NULL) {
@@ -290,7 +316,7 @@ void run(bytefile *bf, int argc, char **argv) {
         break;
       }
 
-      case 3: { // CBEGIN %d %d
+      case CMD_CTRL_CBEGIN: { // CBEGIN %d %d
         // NOTE: example not found, no checks done
         int args_sz = ip_read_int(&s.ip);
         int locals_sz = ip_read_int(&s.ip);
@@ -302,7 +328,7 @@ void run(bytefile *bf, int argc, char **argv) {
         break;
       }
 
-      case 4: // CLOSURE 0x%.8x
+      case CMD_CTRL_CLOSURE: // CLOSURE 0x%.8x
       {
         aint call_offset = ip_read_int(&s.ip);
         aint args_count = ip_read_int(&s.ip);
@@ -316,16 +342,14 @@ void run(bytefile *bf, int argc, char **argv) {
         }
         s_push(bf->code_ptr + call_offset);
 
-        void *closure = Bclosure((aint *)s.sp, args_count);
+        void *closure = Bclosure((aint *)__gc_stack_top, args_count);
 
-        push_extra_root(closure);
         s_popn(args_count + 1);
         s_push(closure);
-        pop_extra_root(closure);
         break;
       }
 
-      case 5: {                               // CALLC %d // call clojure
+      case CMD_CTRL_CALLC: {                  // CALLC %d // call clojure
         aint args_count = ip_read_int(&s.ip); // args count
 
         call_happened = true;
@@ -336,23 +360,23 @@ void run(bytefile *bf, int argc, char **argv) {
         break;
       }
 
-      case 6: { // CALL 0x%.8x %d // call function
-        int call_p = ip_read_int(&s.ip);
+      case CMD_CTRL_CALL: { // CALL 0x%.8x %d // call function
+        uint call_p = ip_read_int(&s.ip);
         ip_read_int(&s.ip); // args count
 
         call_happened = true;
         s.is_closure_call = false;
         s.call_ip = s.ip;
 
-        if (call_p < 0) {
-          s_failure(&s, "negative file offset jumps are not allowed");
+        if (call_p >= bf->code_size) {
+          s_failure(&s, "jump out of file");
         }
         s.ip = bf->code_ptr + call_p;
         break;
       }
 
-      case 7: { // TAG %s %d
-        const char *name = ip_read_string(&s.ip, bf);
+      case CMD_CTRL_TAG: { // TAG %s %d
+        const char *name = ip_read_string(&s.ip);
         aint args_count = ip_read_int(&s.ip);
 
 #ifdef DEBUG_VERSION
@@ -364,18 +388,18 @@ void run(bytefile *bf, int argc, char **argv) {
         break;
       }
 
-      case 8: // ARRAY %d
+      case CMD_CTRL_ARRAY: // ARRAY %d
         s_push_i(Barray_patt(s_pop(), BOX(ip_read_int(&s.ip))));
         break;
 
-      case 9: {                        // FAIL %d %d
-        int line = ip_read_int(&s.ip); // ??
-        int col = ip_read_int(&s.ip);  // ??
+      case CMD_CTRL_FAIL: { // FAIL %d %d
+        int line = ip_read_int(&s.ip);
+        int col = ip_read_int(&s.ip);
         Bmatch_failure(s_pop(), argv[0], BOX(line), BOX(col));
         break;
       }
 
-      case 10: // LINE %d
+      case CMD_CTRL_LINE: // LINE %d
         s.current_line = ip_read_int(&s.ip);
         // maybe some metainfo should be collected
         break;
@@ -385,28 +409,28 @@ void run(bytefile *bf, int argc, char **argv) {
       }
       break;
 
-    case 6: // PATT pats[l]
+    case CMD_PATT: // PATT pats[l]
       // {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"}
       switch (l) {
-      case 0: // =str
+      case CMD_PATT_STR: // =str
         s_push_i(Bstring_patt(s_pop(), s_pop()));
         break;
-      case 1: // #string
+      case CMD_PATT_STR_TAG: // #string
         s_push_i(Bstring_tag_patt(s_pop()));
         break;
-      case 2: // #array
+      case CMD_PATT_ARRAY_TAG: // #array
         s_push_i(Barray_tag_patt(s_pop()));
         break;
-      case 3: // #sexp
+      case CMD_PATT_SEXP_TAG: // #sexp
         s_push_i(Bsexp_tag_patt(s_pop()));
         break;
-      case 4: // #ref
+      case CMD_PATT_REF_TAG: // #ref
         s_push_i(Bunboxed_patt(s_pop()));
         break;
-      case 5: // #val
+      case CMD_PATT_VAL_TAG: // #val
         s_push_i(Bboxed_patt(s_pop()));
         break;
-      case 6: // #fun
+      case CMD_PATT_FUN_TAG: // #fun
         s_push_i(Bclosure_tag_patt(s_pop()));
         break;
       default:
@@ -414,45 +438,41 @@ void run(bytefile *bf, int argc, char **argv) {
       }
       break;
 
-    case 7: {
+    case CMD_BUILTIN: {
       switch (l) {
-      case 0: // CALL Lread
+      case CMD_BUILTIN_Lread: // CALL Lread
         s_push_i(Lread());
         break;
 
-      case 1: // CALL Lwrite
+      case CMD_BUILTIN_Lwrite: // CALL Lwrite
         Lwrite(*s_peek_i());
         break;
 
-      case 2: // CALL Llength
+      case CMD_BUILTIN_Llength: // CALL Llength
         s_push_i(Llength(s_pop()));
         break;
 
-      case 3: { // CALL Lstring
+      case CMD_BUILTIN_Lstring: { // CALL Lstring
         void *val = s_pop();
         void *str = Lstring((aint *)&val);
         s_push(str);
         break;
       }
 
-      case 4: { // CALL Barray %d
+      case CMD_BUILTIN_Barray: { // CALL Barray %d
         size_t elem_count = ip_read_int(&s.ip);
-        if (elem_count < 0) {
-          s_failure(&s, "elements count should be >= 0");
-        }
 
-        void **opr_buffer = elem_count > BUFFER_SIZE ? calloc(elem_count, sizeof(void *)) : buffer;
+        void **opr_buffer = elem_count > BUFFER_SIZE
+                                ? alloc(elem_count * sizeof(void *))
+                                : buffer;
         for (size_t i = 0; i < elem_count; ++i) {
           opr_buffer[elem_count - i - 1] = s_pop();
         }
 
         void *array =
-            Barray((aint *)opr_buffer, BOX(elem_count)); // NOTE: not shure if elems should be added
+            Barray((aint *)opr_buffer,
+                   BOX(elem_count)); // NOTE: not shure if elems should be added
         s_push(array);
-
-        if (elem_count > BUFFER_SIZE) {
-          free(opr_buffer);
-        }
         break;
       }
 

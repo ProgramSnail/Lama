@@ -26,14 +26,14 @@ static void init_state(bytefile *bf, struct State* s, void** stack) {
 
   // printf("%p:%zu - %zu", s->stack, (size_t)s->stack, (size_t)s->stack & 0xF);
 
-  s->sp = s->stack + STACK_SIZE; // [top -> bottom] stack
+  // s->sp = s->stack + STACK_SIZE; // [top -> bottom] stack
   s->fp = NULL;
 }
 
 void construct_state(bytefile *bf, struct State* s, void** stack) {
   __init();
   init_state(bf, s, stack);
-  __gc_stack_bottom = (size_t)s->sp;
+  __gc_stack_bottom = (size_t)(s->stack + STACK_SIZE);
   __gc_stack_top = __gc_stack_bottom;
 
   s_pushn_nil(bf->global_area_size);
@@ -47,7 +47,7 @@ void construct_state(bytefile *bf, struct State* s, void** stack) {
 static void destruct_state(struct State* state) {
   // free(state->stack);
 
-  state->sp = NULL;
+  // state->sp = NULL;
   state->fp = NULL;
   state->ip = NULL;
   state->call_ip = NULL;

@@ -53,7 +53,7 @@ static inline void **f_args(struct Frame *fp) {
 
 struct State {
   void **stack;
-  void **sp;        // stack pointer
+  // void **sp;        // stack pointer
   struct Frame *fp; // function frame pointer
   bytefile *bf;
   int current_line;
@@ -90,3 +90,78 @@ static inline enum VarCategory to_var_category(uint8_t category) {
   }
   return (enum VarCategory)category;
 }
+
+enum CMD {
+  CMD_BINOP = 0,
+  CMD_BASIC,
+  CMD_LD,
+  CMD_LDA,
+  CMD_ST,
+  CMD_CTRL,
+  CMD_PATT,
+  CMD_BUILTIN,
+  CMD_EXIT = 15,
+};
+
+enum CMD_BINOPS {
+  CMD_BINOP_ADD = 1, // +
+  CMD_BINOP_SUB,     // -
+  CMD_BINOP_MULT,    // *
+  CMD_BINOP_DIV,     // /
+  CMD_BINOP_MOD,     // %
+  CMD_BINOP_LEQ,     // <
+  CMD_BINOP_LT,      // <=
+  CMD_BINOP_GT,      // >
+  CMD_BINOP_GEQ,     // >=
+  CMD_BINOP_EQ,      // ==
+  CMD_BINOP_NEQ,     // !=
+  CMD_BINOP_AND,     // &&
+  CMD_BINOP_OR,      // !!
+};
+
+enum CMD_BASICS {
+  CMD_BASIC_CONST = 0,
+  CMD_BASIC_STRING,
+  CMD_BASIC_SEXP,
+  CMD_BASIC_STI,
+  CMD_BASIC_STA,
+  CMD_BASIC_JMP,
+  CMD_BASIC_END,
+  CMD_BASIC_RET,
+  CMD_BASIC_DROP,
+  CMD_BASIC_DUP,
+  CMD_BASIC_SWAP,
+  CMD_BASIC_ELEM,
+};
+
+enum CMD_CTRLS {
+  CMD_CTRL_CJMPz = 0,
+  CMD_CTRL_CJMPnz,
+  CMD_CTRL_BEGIN,
+  CMD_CTRL_CBEGIN,
+  CMD_CTRL_CLOSURE,
+  CMD_CTRL_CALLC,
+  CMD_CTRL_CALL,
+  CMD_CTRL_TAG,
+  CMD_CTRL_ARRAY,
+  CMD_CTRL_FAIL,
+  CMD_CTRL_LINE,
+};
+
+enum CMD_PATTS {
+  CMD_PATT_STR = 0,
+  CMD_PATT_STR_TAG,
+  CMD_PATT_ARRAY_TAG,
+  CMD_PATT_SEXP_TAG,
+  CMD_PATT_REF_TAG,
+  CMD_PATT_VAL_TAG,
+  CMD_PATT_FUN_TAG,
+};
+
+enum CMD_BUILTINS {
+  CMD_BUILTIN_Lread = 0,
+  CMD_BUILTIN_Lwrite,
+  CMD_BUILTIN_Llength,
+  CMD_BUILTIN_Lstring,
+  CMD_BUILTIN_Barray,
+};

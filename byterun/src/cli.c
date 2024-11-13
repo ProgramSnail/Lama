@@ -10,9 +10,9 @@ int main(int argc, char** argv) {
 
   // printf("size of aint is %i\n", sizeof(aint));
   bytefile *f = read_file(argv[1]);
-#ifdef DEBUG_VERSION
-  dump_file (stdout, f);
-#endif
+// #ifdef DEBUG_VERSION
+//   dump_file (stdout, f);
+// #endif
   run(f, argc - 1, argv + 1);
 
   free(f->global_ptr);

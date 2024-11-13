@@ -20,25 +20,34 @@ typedef struct {
   char buffer[0];
 } bytefile;
 
-/* Gets a string from a string table by an index */
-static inline char *get_string(bytefile *f, size_t pos) {
-  return &f->string_ptr[pos];
-}
-
-/* Gets a name for a public symbol */
-static inline char *get_public_name(bytefile *f, size_t i) {
-  return get_string(f, f->public_ptr[i * 2]);
-}
-
-/* Gets an offset for a publie symbol */
-static inline size_t get_public_offset(bytefile *f, size_t i) {
-  return f->public_ptr[i * 2 + 1];
-}
-
 static inline void exec_failure(const char *cmd, int line, aint offset,
                                 const char *msg) {
   failure("*** RUNTIME ERROR: %i(0x%.8x):%s error: %s\n", line, offset, cmd,
           msg);
 }
 
-// ---
+/* Gets a string from a string table by an index */
+static inline const char *get_string(const bytefile *f, size_t pos) {
+  if (pos >= f->stringtab_size) {
+    failure("strinpg pos is out of range: %zu >= %i\n", pos, f->stringtab_size);
+  }
+  return &f->string_ptr[pos];
+}
+
+/* Gets a name for a public symbol */
+static inline const char *get_public_name(const bytefile *f, size_t i) {
+  if (i * 2 >= f->public_symbols_number) {
+    failure("public number is out of range: %zu >= %i\n", i * 2,
+            f->public_symbols_number);
+  }
+  return get_string(f, f->public_ptr[i * 2]);
+}
+
+/* Gets an offset for a publie symbol */
+static inline size_t get_public_offset(const bytefile *f, size_t i) {
+  if (i * 2 + 1 >= f->public_symbols_number) {
+    failure("public number is out of range: %zu >= %i\n", i * 2 + 1,
+            f->public_symbols_number);
+  }
+  return f->public_ptr[i * 2 + 1];
+}
