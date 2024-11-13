@@ -8,7 +8,6 @@ int main(int argc, char** argv) {
     failure("no file name provided");
   }
 
-  // printf("size of aint is %i\n", sizeof(aint));
   bytefile *f = read_file(argv[1]);
 // #ifdef DEBUG_VERSION
 //   dump_file (stdout, f);

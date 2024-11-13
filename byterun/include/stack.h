@@ -66,8 +66,12 @@ static inline void s_push_i(aint val) { s_push((void *)val); }
 static inline void s_push_nil() { s_push(NULL); }
 
 static inline void s_pushn_nil(size_t n) {
+  if ((void **)__gc_stack_top + (aint)n - 1 <= s.stack) {
+    s_failure(&s, "stack overflow");
+  }
   for (size_t i = 0; i < n; ++i) {
-    s_push(NULL);
+    __gc_stack_top -= sizeof(void *);
+    *(void **)__gc_stack_top = NULL;
   }
 }
 
@@ -82,7 +86,6 @@ static inline void *s_pop() {
   printf("--> pop\n");
 #endif
   void *value = *(void **)__gc_stack_top;
-  // *(void **)__gc_stack_top = NULL;
   __gc_stack_top += sizeof(void *);
   return value;
 }
@@ -90,9 +93,10 @@ static inline void *s_pop() {
 static inline aint s_pop_i() { return (aint)s_pop(); }
 
 static inline void s_popn(size_t n) {
-  for (size_t i = 0; i < n; ++i) {
-    s_pop();
+  if ((void **)__gc_stack_top + (aint)n - 1 >= s_top()) {
+    s_failure(&s, "empty stack");
   }
+  __gc_stack_top += n * sizeof(void *);
 }
 
 // ------ functions ------

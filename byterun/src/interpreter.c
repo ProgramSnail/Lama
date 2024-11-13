@@ -40,27 +40,6 @@ void run(bytefile *bf, int argc, char **argv) {
   printf("--- interpreter run ---\n");
 #endif
 
-  // const char *ops[] = {
-  //     "+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
-  // aint (*ops_func[])(void *, void *) = {
-  //     &Ls__Infix_43,   // +
-  //     &Ls__Infix_45,   // -
-  //     &Ls__Infix_42,   // *
-  //     &Ls__Infix_47,   // /
-  //     &Ls__Infix_37,   // %
-  //     &Ls__Infix_60,   // <
-  //     &Ls__Infix_6061, // <=
-  //     &Ls__Infix_62,   // >
-  //     &Ls__Infix_6261, // >=
-  //     &Ls__Infix_6161, // ==
-  //     &Ls__Infix_3361, // !=
-  //     &Ls__Infix_3838, // &&
-  //     &Ls__Infix_3333, // !!
-  // };
-
-  // const char *pats[] = {"=str", "#string", "#array", "#sexp",
-  //                       "#ref", "#val",    "#fun"};
-
   // argc, argv
   {
     s_push_i(BOX(argc));
@@ -78,7 +57,6 @@ void run(bytefile *bf, int argc, char **argv) {
 #endif
 
   do {
-    // char *before_op_ip = s.ip; // save to set s.prev_ip
     bool call_happened = false;
 
     if (s.ip >= bf->code_ptr + bf->code_size) {
@@ -104,7 +82,7 @@ void run(bytefile *bf, int argc, char **argv) {
     case CMD_BINOP: { // BINOP ops[l-1]
       void *left = s_pop();
       void *right = s_pop();
-      switch ((int)l) {
+      switch (l) {
       case CMD_BINOP_ADD: // +
         s_push_i(Ls__Infix_43(right, left));
         break;
