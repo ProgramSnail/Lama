@@ -23,10 +23,7 @@ static inline bool s_is_empty() {
   return false;
 }
 
-static inline void **s_nth(aint n) {
-  if (n < 0) {
-    s_failure(&s, "can't access stack by negative index");
-  }
+static inline void **s_nth(size_t n) {
   if ((void **)__gc_stack_top + n >= s_top()) {
     s_failure(&s, "not enough elements in stack");
   }
@@ -97,6 +94,42 @@ static inline void s_popn(size_t n) {
     s_failure(&s, "empty stack");
   }
   __gc_stack_top += n * sizeof(void *);
+}
+
+// ------ complex operations ------
+
+// for some reason does not work in sexp constructor, probably connected with gc
+// behaviour
+static inline void s_put_nth(size_t n, void *val) {
+  s_push_nil();
+  if ((void **)__gc_stack_top + n >= s_top()) {
+    s_failure(&s, "not enough elements in stack");
+  }
+  if (s.fp != NULL && (void **)__gc_stack_top + n >= f_locals(s.fp)) {
+    s_failure(&s, "not enough elements in function stack");
+  }
+
+  for (size_t i = 0; i < n; ++i) {
+    ((void **)__gc_stack_top)[i] = ((void **)__gc_stack_top)[i + 1];
+  }
+  ((void **)__gc_stack_top)[n] = val;
+}
+
+static inline void s_rotate_n(size_t n) {
+  s_push_nil();
+  if ((void **)__gc_stack_top + (aint)n - 1 >= s_top()) {
+    s_failure(&s, "not enough elements in stack");
+  }
+  if (s.fp != NULL && (void **)__gc_stack_top + (aint)n - 1 >= f_locals(s.fp)) {
+    s_failure(&s, "not enough elements in function stack");
+  }
+
+  void *buf = NULL;
+  for (size_t i = 0; 2 * i < n; ++i) {
+    buf = ((void **)__gc_stack_top)[n - i];
+    ((void **)__gc_stack_top)[n - i] = ((void **)__gc_stack_top)[i];
+    ((void **)__gc_stack_top)[i] = buf;
+  }
 }
 
 // ------ functions ------
@@ -186,10 +219,7 @@ static inline void print_stack() {
 
 // --- category ---
 
-static inline void **var_by_category(enum VarCategory category, int id) {
-  if (id < 0) {
-    s_failure(&s, "can't read variable: negative id"); // %i", id);
-  }
+static inline void **var_by_category(enum VarCategory category, size_t id) {
   void **var = NULL;
   switch (category) {
   case VAR_GLOBAL:

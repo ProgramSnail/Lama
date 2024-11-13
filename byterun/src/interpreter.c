@@ -156,12 +156,16 @@ void run(bytefile *bf, int argc, char **argv) {
                                 ? alloc((args_count + 1) * sizeof(void *))
                                 : buffer;
 
+        // s_put_nth(args_count, (void *)LtagHash((char *)name));
+
         for (size_t i = 1; i <= args_count; ++i) {
           opr_buffer[args_count - i] = s_pop();
         }
         opr_buffer[args_count] = (void *)LtagHash((char *)name);
 
         void *sexp = Bsexp((aint *)opr_buffer, BOX(args_count + 1));
+        // void *sexp = Bsexp((aint *)s_peek(), BOX(args_count + 1));
+        // s_popn(args_count + 1);
 
         s_push(sexp);
         break;
@@ -440,16 +444,20 @@ void run(bytefile *bf, int argc, char **argv) {
       case CMD_BUILTIN_Barray: { // CALL Barray %d
         size_t elem_count = ip_read_int(&s.ip);
 
-        void **opr_buffer = elem_count > BUFFER_SIZE
-                                ? alloc(elem_count * sizeof(void *))
-                                : buffer;
-        for (size_t i = 0; i < elem_count; ++i) {
-          opr_buffer[elem_count - i - 1] = s_pop();
-        }
+        // void **opr_buffer = elem_count > BUFFER_SIZE
+        //                         ? alloc(elem_count * sizeof(void *))
+        //                         : buffer;
+        // for (size_t i = 0; i < elem_count; ++i) {
+        //   opr_buffer[elem_count - i - 1] = s_pop();
+        // }
 
+        s_rotate_n(elem_count);
+        // void *array =
+        //     Barray((aint *)opr_buffer,
+        //            BOX(elem_count)); // NOTE: not shure if elems should be added
         void *array =
-            Barray((aint *)opr_buffer,
-                   BOX(elem_count)); // NOTE: not shure if elems should be added
+            Barray((aint *)s_peek(),
+                   BOX(elem_count));
         s_push(array);
         break;
       }
