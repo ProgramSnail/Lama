@@ -8,6 +8,12 @@
 #include "types.h"
 #include "utils.h"
 
+#define ASSERT_UNBOXED(memo, x)                                                \
+  do                                                                           \
+    if (!UNBOXED(x))                                                           \
+      failure("unboxed value expected in %s\n", memo);                         \
+  while (0)
+
 struct State s;
 
 static inline int ip_read_int(char **ip) {
@@ -80,51 +86,25 @@ void run(bytefile *bf, int argc, char **argv) {
 
     /* BINOP */
     case CMD_BINOP: { // BINOP ops[l-1]
-      void *left = s_pop();
-      void *right = s_pop();
-      switch (l) {
-      case CMD_BINOP_ADD: // +
-        s_push_i(Ls__Infix_43(right, left));
-        break;
-      case CMD_BINOP_SUB: // -
-        s_push_i(Ls__Infix_45(right, left));
-        break;
-      case CMD_BINOP_MULT: // *
-        s_push_i(Ls__Infix_42(right, left));
-        break;
-      case CMD_BINOP_DIV: // /
-        s_push_i(Ls__Infix_47(right, left));
-        break;
-      case CMD_BINOP_MOD: // %
-        s_push_i(Ls__Infix_37(right, left));
-        break;
-      case CMD_BINOP_LEQ: // <
-        s_push_i(Ls__Infix_60(right, left));
-        break;
-      case CMD_BINOP_LT: // <=
-        s_push_i(Ls__Infix_6061(right, left));
-        break;
-      case CMD_BINOP_GT: // >
-        s_push_i(Ls__Infix_62(right, left));
-        break;
-      case CMD_BINOP_GEQ: // >=
-        s_push_i(Ls__Infix_6261(right, left));
-        break;
-      case CMD_BINOP_EQ: // ==
-        s_push_i(Ls__Infix_6161(right, left));
-        break;
-      case CMD_BINOP_NEQ: // !=
-        s_push_i(Ls__Infix_3361(right, left));
-        break;
-      case CMD_BINOP_AND: // &&
-        s_push_i(Ls__Infix_3838(right, left));
-        break;
-      case CMD_BINOP_OR: // !!
-        s_push_i(Ls__Infix_3333(right, left));
-        break;
-      default:
-        s_failure(&s, "invalid opcode"); // %d-%d\n", h, l);
-        break;
+      void *snd = s_pop();
+      void *fst = s_pop();
+      if (l == CMD_BINOP_SUB) {
+        s_push_i(Ls__Infix_45(fst, snd));
+      } else {
+        switch (l) {
+#define BINOP_OPR(val, op)                                                     \
+  case val:                                                                    \
+    ASSERT_UNBOXED("captured op:1", fst);                                      \
+    ASSERT_UNBOXED("captured op:2", snd);                                      \
+    s_push_i(BOX(UNBOX(fst) op UNBOX(snd)));                                   \
+    break;
+          FORALL_BINOP(BINOP_OPR)
+#undef BINOP_OPR
+
+        default:
+          s_failure(&s, "invalid opcode"); // %d-%d\n", h, l);
+          break;
+        }
       }
       break;
     }
@@ -454,10 +434,9 @@ void run(bytefile *bf, int argc, char **argv) {
         s_rotate_n(elem_count);
         // void *array =
         //     Barray((aint *)opr_buffer,
-        //            BOX(elem_count)); // NOTE: not shure if elems should be added
-        void *array =
-            Barray((aint *)s_peek(),
-                   BOX(elem_count));
+        //            BOX(elem_count)); // NOTE: not shure if elems should be
+        //            added
+        void *array = Barray((aint *)s_peek(), BOX(elem_count));
         s_push(array);
         break;
       }
