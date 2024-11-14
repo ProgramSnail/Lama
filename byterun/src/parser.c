@@ -49,14 +49,17 @@ bytefile* read_file (char *fname) {
   if (file->buffer + public_symbols_size >= file_end) {
     failure ("public symbols are out of the file size\n");
   }
+  file->string_ptr = &file->buffer[public_symbols_size];
   if (file->string_ptr + file->stringtab_size > file_end) {
     failure ("strings table is out of the file size\n");
+  }
+  if (file->stringtab_size > 0 && file->string_ptr[file->stringtab_size - 1] != 0) {
+    failure ("strings table is not zero-ended\n");
   }
   if (file->code_size < 0 || public_symbols_size < 0 || file->stringtab_size < 0) {
     failure ("file zones sizes should be >= 0\n");
   }
 
-  file->string_ptr  = &file->buffer [public_symbols_size];
   file->public_ptr  = (int*) file->buffer;
   file->code_ptr    = &file->string_ptr [file->stringtab_size];
   file->global_ptr  = (int*) calloc (file->global_area_size, sizeof (int));

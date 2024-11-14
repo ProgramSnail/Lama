@@ -9,14 +9,14 @@
 
 /* The unpacked representation of bytecode file */
 typedef struct {
-  char *string_ptr;     /* A pointer to the beginning of the string table */
-  int *public_ptr;      /* A pointer to the beginning of publics table    */
-  char *code_ptr;       /* A pointer to the bytecode itself               */
-  int *global_ptr;      /* A pointer to the global area                   */
-  int code_size;        /* The size (in bytes) of code                    */
-  int stringtab_size;   /* The size (in bytes) of the string table        */
-  int global_area_size; /* The size (in words) of global area             */
-  int public_symbols_number; /* The number of public symbols */
+  char *string_ptr;      /* A pointer to the beginning of the string table */
+  int *public_ptr;       /* A pointer to the beginning of publics table    */
+  char *code_ptr;        /* A pointer to the bytecode itself               */
+  int *global_ptr;       /* A pointer to the global area                   */
+  int code_size;         /* The size (in bytes) of code                    */
+  uint stringtab_size;   /* The size (in bytes) of the string table        */
+  uint global_area_size; /* The size (in words) of global area             */
+  uint public_symbols_number; /* The number of public symbols */
   char buffer[0];
 } bytefile;
 
@@ -36,7 +36,7 @@ static inline const char *get_string(const bytefile *f, size_t pos) {
 
 /* Gets a name for a public symbol */
 static inline const char *get_public_name(const bytefile *f, size_t i) {
-  if (i * 2 >= f->public_symbols_number) {
+  if (i >= f->public_symbols_number) {
     failure("public number is out of range: %zu >= %i\n", i * 2,
             f->public_symbols_number);
   }
@@ -45,7 +45,7 @@ static inline const char *get_public_name(const bytefile *f, size_t i) {
 
 /* Gets an offset for a publie symbol */
 static inline size_t get_public_offset(const bytefile *f, size_t i) {
-  if (i * 2 + 1 >= f->public_symbols_number) {
+  if (i + 1 >= f->public_symbols_number) {
     failure("public number is out of range: %zu >= %i\n", i * 2 + 1,
             f->public_symbols_number);
   }
