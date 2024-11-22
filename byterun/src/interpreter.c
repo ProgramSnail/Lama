@@ -302,6 +302,9 @@ void run(bytefile *bf, int argc, char **argv) {
               var_by_category(to_var_category(l), ip_read_int(&s.ip));
           s_push(*var_ptr);
         }
+        if (call_offset >= bf->code_size) {
+          s_failure(&s, "jump out of file");
+        }
         s_push(bf->code_ptr + call_offset);
 
         void *closure = Bclosure((aint *)__gc_stack_top, args_count);
