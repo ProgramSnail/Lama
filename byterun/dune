@@ -5,8 +5,20 @@
   (:main src/cli.c src/interpreter.c)
   (:parser src/parser.c)
   (:utils src/types.c)
+  (:runtime ../runtime/runtime.a)
+  (:module_manager module_manager.o))
+ (mode
+  (promote (until-clean)))
+ (action
+  (run gcc -Iinclude/ %{main} %{parser} %{utils} %{runtime} %{module_manager} -lstdc++ -o %{target})))
+
+(rule
+ (target module_manager.o)
+ (deps
+  (:include (source_tree include))
+  (:src src/module_manager.cpp)
   (:runtime ../runtime/runtime.a))
  (mode
   (promote (until-clean)))
  (action
-  (run gcc -Iinclude/ %{main} %{parser} %{utils} %{runtime} -o %{target})))
+  (run g++ -Iinclude/ -c %{src} -o %{target})))

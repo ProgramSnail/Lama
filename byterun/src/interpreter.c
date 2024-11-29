@@ -369,6 +369,23 @@ void run(bytefile *bf, int argc, char **argv) {
         // maybe some metainfo should be collected
         break;
 
+      case CMD_CTRL_CALLF: { // CALLF %s %d // call external function
+        const char* call_func = ip_read_string(&s.ip);
+        ip_read_int(&s.ip); // args count
+
+        // TODO: jump to other module, save ret module
+
+        // call_happened = true;
+        // s.is_closure_call = false;
+        // s.call_ip = s.ip;
+
+        // if (call_p >= bf->code_size) {
+        //   s_failure(&s, "jump out of file");
+        // }
+        // s.ip = bf->code_ptr + call_p;
+        break;
+      }
+
       default:
         s_failure(&s, "invalid opcode"); // %d-%d\n", h, l);
       }

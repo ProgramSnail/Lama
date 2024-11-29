@@ -19,8 +19,8 @@
   DEF(CMD_BINOP_AND, &&)                                                       \
   DEF(CMD_BINOP_OR, ||)
 
-const char *read_cmd(char *ip);
+const char *read_cmd(const char *ip);
 
-bytefile *read_file(char *fname);
+bytefile *read_file(const char *fname);
 
-// void dump_file(FILE *f, bytefile *bf);
+void dump_file(FILE *f, bytefile *bf);
