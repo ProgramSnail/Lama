@@ -38,23 +38,12 @@ static inline const char *ip_read_string(char **ip) {
 
 const size_t BUFFER_SIZE = 1000;
 
-void init_stack(int argc, char **argv) {} // TODO
+// size_t stack[STACK_SIZE];
+void run_init(size_t *stack) {
+  init_state(&s, (void**)stack);
+}
 
-void init_mod_rec(uint mod_id) {} // TODO
-
-void run(uint mod_id, int argc, char **argv) { // TODO: remove mod init and stack init
-  size_t stack[STACK_SIZE];
-  void *buffer[BUFFER_SIZE];
-  construct_state(
-      mod_id, &s,
-      (void **)
-          stack); // TODO: separate on each module part and part for all run
-
-#ifdef DEBUG_VERSION
-  printf("--- interpreter run ---\n");
-#endif
-
-  // argc, argv
+void run_prepare_exec(int argc, char **argv) {
   {
     s_push_i(BOX(argc));
     for (size_t i = 0; i < argc; ++i) {
@@ -65,10 +54,18 @@ void run(uint mod_id, int argc, char **argv) { // TODO: remove mod init and stac
     s_popn(argc);
     s_push(argv_elem);
   }
+}
 
-#ifdef DEBUG_VERSION
-  printf("- loop start\n");
-#endif
+void run_init_mod_rec(uint mod_id) {
+  init_mod_state(mod_id, &s);
+  init_mod_state_globals(&s);
+  // TODO: recursive for imports, check if visited
+}
+
+void run_mod(uint mod_id, int argc, char **argv) {
+  init_mod_state(mod_id, &s);
+
+  void *buffer[BUFFER_SIZE];
 
   do {
     bool call_happened = false;
@@ -505,5 +502,6 @@ stop:;
 #ifdef DEBUG_VERSION
   printf("--- run end ---\n");
 #endif
-  cleanup_state(&s);
 }
+
+void run_cleanup() { cleanup_state(&s); }

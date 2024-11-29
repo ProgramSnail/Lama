@@ -69,7 +69,9 @@ struct State {
   char *call_ip;  // prev instruction pointer (to remember jmp locations)
 };
 
-void construct_state(uint mod_id, struct State *s, void **stack);
+void init_state(struct State *s, void **stack);
+void init_mod_state(uint mod_id, struct State *s);
+void init_mod_state_globals(struct State *s);
 void cleanup_state(struct State *state);
 
 // TODO: print current mod id
