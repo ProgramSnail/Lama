@@ -65,7 +65,10 @@ bytefile* read_file (const char *fname) {
   file->imports_ptr  = (int*) file->buffer;
   file->public_ptr  = (int*) (file->buffer + imports_size);
   file->code_ptr    = &file->string_ptr [file->stringtab_size];
-  file->global_ptr  = (int*) calloc (file->global_area_size, sizeof (int));
+
+  // is allocated on module run on stack
+  file->global_ptr = NULL;
+  // file->global_ptr  = (int*) calloc (file->global_area_size, sizeof (int));
 
   file->code_size = size - strings_buffer_offset - file->stringtab_size;
 

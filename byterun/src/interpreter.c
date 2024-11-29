@@ -3,6 +3,7 @@
 #include "../../runtime/gc.h"
 #include "../../runtime/runtime.h"
 
+#include "module_manager.h"
 #include "runtime_externs.h"
 #include "stack.h"
 #include "types.h"
@@ -37,10 +38,17 @@ static inline const char *ip_read_string(char **ip) {
 
 const size_t BUFFER_SIZE = 1000;
 
-void run(bytefile *bf, int argc, char **argv) {
+void init_stack(int argc, char **argv) {} // TODO
+
+void init_mod_rec(uint mod_id) {} // TODO
+
+void run(uint mod_id, int argc, char **argv) { // TODO: remove mod init and stack init
   size_t stack[STACK_SIZE];
   void *buffer[BUFFER_SIZE];
-  construct_state(bf, &s, (void **)stack);
+  construct_state(
+      mod_id, &s,
+      (void **)
+          stack); // TODO: separate on each module part and part for all run
 
 #ifdef DEBUG_VERSION
   printf("--- interpreter run ---\n");
@@ -65,11 +73,11 @@ void run(bytefile *bf, int argc, char **argv) {
   do {
     bool call_happened = false;
 
-    if (s.ip >= bf->code_ptr + bf->code_size) {
+    if (s.ip >= s.bf->code_ptr + s.bf->code_size) {
       s_failure(&s, "instruction pointer is out of range (>= size)");
     }
 
-    if (s.ip < bf->code_ptr) {
+    if (s.ip < s.bf->code_ptr) {
       s_failure(&s, "instruction pointer is out of range (< 0)");
     }
 
@@ -171,10 +179,10 @@ void run(bytefile *bf, int argc, char **argv) {
       case CMD_BASIC_JMP: { // JMP 0x%.8x
         uint jmp_p = ip_read_int(&s.ip);
 
-        if (jmp_p >= bf->code_size) {
+        if (jmp_p >= s.bf->code_size) {
           s_failure(&s, "jump out of file");
         }
-        s.ip = bf->code_ptr + jmp_p;
+        s.ip = s.bf->code_ptr + jmp_p;
         break;
       }
 
@@ -246,11 +254,11 @@ void run(bytefile *bf, int argc, char **argv) {
       case CMD_CTRL_CJMPz: { // CJMPz 0x%.8x
         uint jmp_p = ip_read_int(&s.ip);
 
-        if (jmp_p >= bf->code_size) {
+        if (jmp_p >= s.bf->code_size) {
           s_failure(&s, "jump out of file");
         }
         if (UNBOX(s_pop_i()) == 0) {
-          s.ip = bf->code_ptr + jmp_p;
+          s.ip = s.bf->code_ptr + jmp_p;
         }
         break;
       }
@@ -258,11 +266,11 @@ void run(bytefile *bf, int argc, char **argv) {
       case CMD_CTRL_CJMPnz: { // CJMPnz  0x%.8x
         uint jmp_p = ip_read_int(&s.ip);
 
-        if (jmp_p >= bf->code_size) {
+        if (jmp_p >= s.bf->code_size) {
           s_failure(&s, "jump out of file");
         }
         if (UNBOX(s_pop_i()) != 0) {
-          s.ip = bf->code_ptr + jmp_p;
+          s.ip = s.bf->code_ptr + jmp_p;
         }
         break;
       }
@@ -273,8 +281,8 @@ void run(bytefile *bf, int argc, char **argv) {
         if (s.fp != NULL && s.call_ip == NULL) {
           s_failure(&s, "begin should only be called after call");
         }
-        s_enter_f(s.call_ip /*ip from call*/, s.is_closure_call, args_sz,
-                  locals_sz);
+        s_enter_f(s.call_ip /*ip from call*/, s.call_module_id,
+                  s.is_closure_call, args_sz, locals_sz);
         break;
       }
 
@@ -285,8 +293,8 @@ void run(bytefile *bf, int argc, char **argv) {
         if (s.fp != NULL && s.call_ip == NULL) {
           s_failure(&s, "begin should only be called after call");
         }
-        s_enter_f(s.call_ip /*ip from call*/, s.is_closure_call, args_sz,
-                  locals_sz);
+        s_enter_f(s.call_ip /*ip from call*/, s.call_module_id,
+                  s.is_closure_call, args_sz, locals_sz);
         break;
       }
 
@@ -302,10 +310,10 @@ void run(bytefile *bf, int argc, char **argv) {
               var_by_category(to_var_category(l), ip_read_int(&s.ip));
           s_push(*var_ptr);
         }
-        if (call_offset >= bf->code_size) {
+        if (call_offset >= s.bf->code_size) {
           s_failure(&s, "jump out of file");
         }
-        s_push(bf->code_ptr + call_offset);
+        s_push(s.bf->code_ptr + call_offset);
 
         void *closure = Bclosure((aint *)__gc_stack_top, args_count);
 
@@ -320,6 +328,7 @@ void run(bytefile *bf, int argc, char **argv) {
         call_happened = true;
         s.is_closure_call = true;
         s.call_ip = s.ip;
+        s.call_module_id = s.current_module_id;
 
         s.ip = Belem(*s_nth(args_count), BOX(0)); // use offset instead ??
         break;
@@ -332,11 +341,12 @@ void run(bytefile *bf, int argc, char **argv) {
         call_happened = true;
         s.is_closure_call = false;
         s.call_ip = s.ip;
+        s.call_module_id = s.current_module_id;
 
-        if (call_p >= bf->code_size) {
+        if (call_p >= s.bf->code_size) {
           s_failure(&s, "jump out of file");
         }
-        s.ip = bf->code_ptr + call_p;
+        s.ip = s.bf->code_ptr + call_p;
         break;
       }
 
@@ -370,19 +380,27 @@ void run(bytefile *bf, int argc, char **argv) {
         break;
 
       case CMD_CTRL_CALLF: { // CALLF %s %d // call external function
-        const char* call_func = ip_read_string(&s.ip);
+        const char *call_func_name = ip_read_string(&s.ip);
         ip_read_int(&s.ip); // args count
 
         // TODO: jump to other module, save ret module
+        struct ModSearchResult func = mod_search_pub_symbol(call_func_name);
+        if (func.mod_file == NULL) {
+          s_failure(&s, "external function not found");
+        }
 
-        // call_happened = true;
-        // s.is_closure_call = false;
-        // s.call_ip = s.ip;
+        call_happened = true;
+        s.is_closure_call = false;
+        s.call_ip = s.ip;
+        s.call_module_id = s.current_module_id;
 
-        // if (call_p >= bf->code_size) {
-        //   s_failure(&s, "jump out of file");
-        // }
-        // s.ip = bf->code_ptr + call_p;
+        s.current_module_id = func.mod_id;
+        s.bf = func.mod_file;
+
+        if (func.symbol_offset >= s.bf->code_size) {
+          s_failure(&s, "jump out of file");
+        }
+        s.ip = s.bf->code_ptr + func.symbol_offset;
         break;
       }
 
@@ -452,10 +470,9 @@ void run(bytefile *bf, int argc, char **argv) {
         }
 
         // s_rotate_n(elem_count);
-        void *array =
-            Barray((aint *)opr_buffer,
-                   BOX(elem_count)); // NOTE: not shure if elems should be
-                                     // added
+        void *array = Barray((aint *)opr_buffer,
+                             BOX(elem_count)); // NOTE: not shure if elems
+                                               // should be added
 
         // void *array = Barray((aint *)s_peek(), BOX(elem_count));
         s_push(array);
@@ -474,6 +491,7 @@ void run(bytefile *bf, int argc, char **argv) {
     if (!call_happened) {
       s.is_closure_call = false;
       s.call_ip = NULL;
+      s.call_module_id = 0;
     }
 
     if (s.fp == NULL) {

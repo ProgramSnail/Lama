@@ -1,3 +1,4 @@
+#include <optional>
 extern "C" {
 #include "module_manager.h"
 #include "parser.h"
@@ -23,8 +24,8 @@ struct ModuleManager {
 
 static ModuleManager manager;
 
-uint32_t path_mod_load(const char *name, std::filesystem::path &&path) {
-  bytefile *module = read_file(path.c_str());
+uint32_t mod_add_impl(bytefile *module,
+                      std::optional<const char *> name = std::nullopt) {
   uint32_t id = manager.modules.size();
   manager.modules.push_back(module);
   for (size_t i = 0; i < module->public_symbols_number; ++i) {
@@ -37,8 +38,15 @@ uint32_t path_mod_load(const char *name, std::filesystem::path &&path) {
       failure("public symbol loaded more then once\n");
     }
   }
-  manager.loaded_modules.insert({name, id});
+  if (name) {
+    manager.loaded_modules.insert({*name, id});
+  }
   return id;
+}
+
+uint32_t path_mod_load(const char *name, std::filesystem::path &&path) {
+  bytefile *module = read_file(path.c_str());
+  return mod_add_impl(module, name);
 }
 extern "C" {
 
@@ -85,14 +93,16 @@ int32_t mod_load(const char *name) {
   return -1;
 }
 
+uint32_t mod_add(bytefile *module) { return mod_add_impl(module); }
+
 ModSearchResult mod_search_pub_symbol(const char *name) {
   auto it = manager.public_symbols_mods.find(name);
   if (it == manager.public_symbols_mods.end()) {
-    return {.symbol_offset = -1, .mod_id = 0, .mod_file = nullptr};
+    return {.symbol_offset = 0, .mod_id = 0, .mod_file = NULL};
   }
 
   return {
-      .symbol_offset = (int32_t)it->second.offset,
+      .symbol_offset = it->second.offset,
       .mod_id = it->second.mod_id,
       .mod_file = mod_get(it->second.mod_id),
   };
