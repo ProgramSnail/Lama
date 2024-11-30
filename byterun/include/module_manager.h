@@ -14,6 +14,8 @@ void mod_add_search_path(const char *path);
 
 bytefile *mod_get(uint32_t id);
 
+int32_t find_mod_loaded(const char *name); // < 0 => not found
+
 int32_t mod_load(const char *name); // < 0 => not found
 
 uint32_t mod_add(bytefile *module);

@@ -56,10 +56,23 @@ void run_prepare_exec(int argc, char **argv) {
   }
 }
 
-void run_init_mod_rec(uint mod_id) {
+void run_mod_rec(uint mod_id, int argc, char **argv) {
+  bytefile* mod = mod_get(mod_id); // TODO: pass as param ??
+  for (size_t i = 0; i < mod->imports_number; ++i) {
+    if (find_mod_loaded(get_import(mod, i)) < 0 && strcmp(get_import(mod, i), "Std") != 0) { // not loaded
+      int32_t import_mod = mod_load(get_import(mod, i));
+      if (import_mod < 0) {
+        failure("module %s not found\n", get_import(mod, i));
+      }
+      run_mod_rec(mod_id, argc, argv);
+    }
+  }
+
   init_mod_state(mod_id, &s);
   init_mod_state_globals(&s);
-  // TODO: recursive for imports, check if visited
+
+  run_prepare_exec(argc, argv); // args for module main
+  run_mod(mod_id, argc, argv);
 }
 
 void run_mod(uint mod_id, int argc, char **argv) {

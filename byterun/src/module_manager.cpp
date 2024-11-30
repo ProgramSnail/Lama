@@ -73,6 +73,8 @@ int32_t find_mod_loaded(const char *name) {
 }
 
 int32_t mod_load(const char *name) {
+  std::string full_name = std::string{name} + ".bc";
+
   auto it = manager.loaded_modules.find(name);
 
   // module already loaded
@@ -80,11 +82,11 @@ int32_t mod_load(const char *name) {
     return it->second;
   }
 
-  if (std::filesystem::exists(name)) {
-    return path_mod_load(name, name);
+  if (std::filesystem::exists(full_name)) {
+    return path_mod_load(name, full_name);
   }
   for (const auto &dir_path : manager.search_paths) {
-    auto path = dir_path / name;
+    auto path = dir_path / full_name;
     if (std::filesystem::exists(path)) {
       return path_mod_load(name, std::move(path));
     }

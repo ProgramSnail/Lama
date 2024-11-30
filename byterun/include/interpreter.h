@@ -4,7 +4,7 @@
 
 void run_init(size_t *stack);
 
-void run_init_mod_rec(uint mod_id);
+void run_mod_rec(uint mod_id, int argc, char **argv);
 
 void run_prepare_exec(int argc, char **argv);
 
