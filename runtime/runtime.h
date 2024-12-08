@@ -2,6 +2,7 @@
 #define __LAMA_RUNTIME__
 
 #include "runtime_common.h"
+
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
@@ -16,6 +17,6 @@
 
 #define WORD_SIZE (CHAR_BIT * sizeof(ptrt))
 
-_Noreturn void failure (char *s, ...);
+void failure (char *s, ...);
 
 #endif
