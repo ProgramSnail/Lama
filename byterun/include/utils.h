@@ -18,7 +18,7 @@ typedef struct {
   uint global_area_size; /* The size (in words) of global area             */
   uint public_symbols_number; /* The number of public symbols */
   char buffer[0];
-} bytefile;
+} Bytefile;
 
 static inline void exec_failure(const char *cmd, int line, aint offset,
                                 const char *msg) {
@@ -27,7 +27,7 @@ static inline void exec_failure(const char *cmd, int line, aint offset,
 }
 
 /* Gets a string from a string table by an index */
-static inline const char *get_string(const bytefile *f, size_t pos) {
+static inline const char *get_string(const Bytefile *f, size_t pos) {
   if (pos >= f->stringtab_size) {
     failure("strinpg pos is out of range: %zu >= %i\n", pos, f->stringtab_size);
   }
@@ -35,18 +35,18 @@ static inline const char *get_string(const bytefile *f, size_t pos) {
 }
 
 /* Gets a name for a public symbol */
-static inline const char *get_public_name(const bytefile *f, size_t i) {
+static inline const char *get_public_name(const Bytefile *f, size_t i) {
   if (i >= f->public_symbols_number) {
-    failure("public number is out of range: %zu >= %i\n", i * 2,
+    failure("public number is out of range: %zu >= %i\n", i,
             f->public_symbols_number);
   }
   return get_string(f, f->public_ptr[i * 2]);
 }
 
 /* Gets an offset for a publie symbol */
-static inline size_t get_public_offset(const bytefile *f, size_t i) {
-  if (i + 1 >= f->public_symbols_number) {
-    failure("public number is out of range: %zu >= %i\n", i * 2 + 1,
+static inline size_t get_public_offset(const Bytefile *f, size_t i) {
+  if (i >= f->public_symbols_number) {
+    failure("public number is out of range: %zu >= %i\n", i,
             f->public_symbols_number);
   }
   return f->public_ptr[i * 2 + 1];

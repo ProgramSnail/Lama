@@ -55,7 +55,7 @@ struct State {
   void **stack;
   // void **sp;        // stack pointer
   struct Frame *fp; // function frame pointer
-  bytefile *bf;
+  Bytefile *bf;
   int current_line;
 
   bool is_closure_call;
@@ -65,7 +65,7 @@ struct State {
   char *call_ip;  // prev instruction pointer (to remember jmp locations)
 };
 
-void construct_state(bytefile *bf, struct State *s, void **stack);
+void construct_state(Bytefile *bf, struct State *s, void **stack);
 void cleanup_state(struct State *state);
 
 static inline void s_failure(struct State *s, const char *msg) {

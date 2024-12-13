@@ -14,9 +14,9 @@ void *__start_custom_data;
 void *__stop_custom_data;
 
 /* Reads a binary bytecode file by name and unpacks it */
-bytefile* read_file (char *fname) {
+Bytefile* read_file (char *fname) {
   FILE *f = fopen (fname, "rb");
-  bytefile *file;
+  Bytefile *file;
 
   if (f == 0) {
     failure ("%s\n", strerror (errno));
@@ -28,7 +28,7 @@ bytefile* read_file (char *fname) {
 
   long size = ftell (f);
   long additional_size = sizeof(void*) * 4 + sizeof(int);
-  file = (bytefile*) malloc (size + additional_size); // file itself + additional data
+  file = (Bytefile*) malloc (size + additional_size); // file itself + additional data
 
   char* file_begin = (char*)file + additional_size;
   char* file_end = file_begin + size;

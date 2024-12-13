@@ -2,11 +2,45 @@
  (target byterun.exe)
  (deps
   (:include (source_tree include))
-  (:main src/cli.c src/interpreter.c)
-  (:parser src/parser.c)
-  (:utils src/types.c)
+  (:main src/cli.cpp)
+  (:parser src/parser.cpp)
+  (:analyzer src/analyzer.cpp)
+  (:obj types.o parser.o interpreter.o)
   (:runtime ../runtime/runtime.a))
  (mode
   (promote (until-clean)))
  (action
-  (run gcc -Iinclude/ %{main} %{parser} %{utils} %{runtime} -o %{target})))
+  (run g++ -std=c++20 -Iinclude/ %{main} %{parser} %{analyzer} %{runtime} %{obj} -o %{target})))
+
+(rule
+ (target types.o)
+ (deps
+  (:include (source_tree include))
+  (:src src/types.c)
+  (:runtime ../runtime/runtime.a))
+ (mode
+  (promote (until-clean)))
+ (action
+  (run gcc -Iinclude/ -c %{src} -o %{target})))
+
+(rule
+ (target parser.o)
+ (deps
+  (:include (source_tree include))
+  (:src src/parser.c)
+  (:runtime ../runtime/runtime.a))
+ (mode
+  (promote (until-clean)))
+ (action
+  (run gcc -Iinclude/ -c %{src} -o %{target})))
+
+(rule
+ (target interpreter.o)
+ (deps
+  (:include (source_tree include))
+  (:src src/interpreter.c)
+  (:runtime ../runtime/runtime.a))
+ (mode
+  (promote (until-clean)))
+ (action
+  (run gcc -Iinclude/ -c %{src} -o %{target})))

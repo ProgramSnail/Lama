@@ -11,7 +11,7 @@ extern size_t __gc_stack_top, __gc_stack_bottom;
 
 // --- State ---
 
-static void init_state(bytefile *bf, struct State* s, void** stack) {
+static void init_state(Bytefile *bf, struct State* s, void** stack) {
   s->stack = stack;
   s->bf = bf;
   s->is_closure_call = false;
@@ -30,7 +30,7 @@ static void init_state(bytefile *bf, struct State* s, void** stack) {
   s->fp = NULL;
 }
 
-void construct_state(bytefile *bf, struct State* s, void** stack) {
+void construct_state(Bytefile *bf, struct State* s, void** stack) {
   __init();
   init_state(bf, s, stack);
   __gc_stack_bottom = (size_t)(s->stack + STACK_SIZE);

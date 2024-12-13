@@ -2,4 +2,4 @@
 
 #include "parser.h"
 
-void run(bytefile *bf, int argc, char **argv);
+void run(Bytefile *bf, int argc, char **argv);

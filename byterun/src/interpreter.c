@@ -37,7 +37,7 @@ static inline const char *ip_read_string(char **ip) {
 
 const size_t BUFFER_SIZE = 1000;
 
-void run(bytefile *bf, int argc, char **argv) {
+void run(Bytefile *bf, int argc, char **argv) {
   size_t stack[STACK_SIZE];
   void *buffer[BUFFER_SIZE];
   construct_state(bf, &s, (void **)stack);
@@ -132,9 +132,9 @@ void run(bytefile *bf, int argc, char **argv) {
                args_count);
 #endif
 
-        void **opr_buffer = args_count >= BUFFER_SIZE
+        void **opr_buffer = (void**)(args_count >= BUFFER_SIZE
                                 ? alloc((args_count + 1) * sizeof(void *))
-                                : buffer;
+                                : buffer);
 
         // s_put_nth(args_count, (void *)LtagHash((char *)name));
 
@@ -321,7 +321,7 @@ void run(bytefile *bf, int argc, char **argv) {
         s.is_closure_call = true;
         s.call_ip = s.ip;
 
-        s.ip = Belem(*s_nth(args_count), BOX(0)); // use offset instead ??
+        s.ip = (char*)Belem(*s_nth(args_count), BOX(0)); // use offset instead ??
         break;
       }
 
@@ -427,9 +427,9 @@ void run(bytefile *bf, int argc, char **argv) {
       case CMD_BUILTIN_Barray: { // CALL Barray %d
         size_t elem_count = ip_read_int(&s.ip);
 
-        void **opr_buffer = elem_count > BUFFER_SIZE
+        void **opr_buffer = (void**)(elem_count > BUFFER_SIZE
                                 ? alloc(elem_count * sizeof(void *))
-                                : buffer;
+                                : buffer);
         for (size_t i = 0; i < elem_count; ++i) {
           opr_buffer[elem_count - i - 1] = s_pop();
         }
