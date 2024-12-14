@@ -7,11 +7,10 @@ extern "C" {
 
 #include <vector>
 
-// TODO
 void analyze(Bytefile *bf) {
   static constexpr const int NOT_VISITED = -1;
-  std::vector<int> visited(bf->code_size, NOT_VISITED);   // store stack depth
-  std::vector<int> control_flow_in(bf->code_size, false); // store
+  std::vector<int> visited(bf->code_size, NOT_VISITED);    // store stack depth
+  std::vector<bool> control_flow_in(bf->code_size, false); // store
 
   std::vector<size_t> to_visit_func;
   std::vector<size_t> to_visit_jmp;
@@ -197,17 +196,17 @@ void analyze(Bytefile *bf) {
       break;
     case Cmd::BEGIN:
     case Cmd::CBEGIN:
-      // TODO: remember & check needed args count
       if (current_begin_counter != nullptr) {
         failure("unexpected function beginning");
       }
+      current_args_count = ip_read_int(&current_ip, *bf);
       current_begin_counter = (uint16_t *)(current_ip + sizeof(uint16_t));
-      *current_begin_counter = 0;
-      current_args_count = ip_read_int(&current_ip, *bf); // TODO: read int16 ??
       current_locals_count = ip_read_int(&current_ip, *bf);
+      // TODO: check uint16_t max ??
+      (*(uint16_t *)(current_ip - sizeof(uint16_t))) = current_locals_count;
+      *current_begin_counter = 0;
       break;
     case Cmd::CLOSURE: {
-      // // TODO: checks ??
       ip_read_int(&ip, *bf);                             // offset
       size_t args_count = ip_read_int(&current_ip, *bf); // args count
       extra_stack_during_opr = args_count;
@@ -219,22 +218,31 @@ void analyze(Bytefile *bf) {
       ++current_stack_depth;
     } break;
     case Cmd::CALLC: {
-      current_stack_depth -=
-          ip_read_int(&current_ip, *bf) + 1; // + closure itself
+      uint args_count = ip_read_int(&current_ip, *bf);
+      current_stack_depth -= args_count + 1; // + closure itself
       if (current_stack_depth < 0) {
         failure("not enough elements in stack");
       }
       ++current_stack_depth;
-      // TODO: check args == cbegin args (?)
+      // NOTE: can't check args == cbegin args (?)
     } break;
     case Cmd::CALL: {
-      ip_read_int(&current_ip, *bf); // call offset
-      current_stack_depth -= ip_read_int(&current_ip, *bf);
+      uint call_offset = ip_read_int(&current_ip, *bf); // call offset
+      uint args_count = ip_read_int(&current_ip, *bf);
+      current_stack_depth -= args_count;
       if (current_stack_depth < 0) {
         failure("not enough elements in stack");
       }
       ++current_stack_depth;
-      // TODO: check args == begin args
+
+      // TODO: unify with next loop
+      if (call_offset >= bf->code_size) {
+        failure("jump/call out of file");
+      }
+
+      if (args_count != *(uint *)(bf->code_ptr + call_offset + 1)) {
+        failure("wrong call argument count");
+      }
     } break;
     case Cmd::TAG:
       if (current_stack_depth < 1) {
@@ -315,8 +323,9 @@ void analyze(Bytefile *bf) {
       bool is_call = (cmd == Cmd::CLOSURE || cmd == Cmd::CALL);
 
       uint jmp_p = ip_read_int(&current_ip, *bf);
-      if (jmp_p >= bf->code_size) { // TODO: check that > begin (?)
-        failure("jump out of file");
+      if (jmp_p >= bf->code_size) {
+        // NOTE: maybe also should check that > begin (?)
+        failure("jump/call out of file");
       }
       control_push(jmp_p, is_call ? to_visit_func : to_visit_jmp);
       break;

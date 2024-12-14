@@ -16,6 +16,14 @@
 
 struct State s;
 
+static inline uint16_t ip_read_half_int(char **ip) {
+  if (*ip + sizeof(uint16_t) > s.bf->code_ptr + s.bf->code_size) {
+    failure("last command is invalid, int parameter can not be read\n");
+  }
+  *ip += sizeof(uint16_t);
+  return *(uint16_t *)((*ip) - sizeof(uint16_t));
+}
+
 static inline int ip_read_int(char **ip) {
   if (*ip + sizeof(int) > s.bf->code_ptr + s.bf->code_size) {
     failure("last command is invalid, int parameter can not be read\n");
@@ -267,28 +275,36 @@ void run(Bytefile *bf, int argc, char **argv) {
         break;
       }
 
-      // TODO: read req stack from second part or args
       case CMD_CTRL_BEGIN: { // BEGIN %d %d // function begin
-        int args_sz = ip_read_int(&s.ip);
-        int locals_sz = ip_read_int(&s.ip);
+        uint args_sz = ip_read_int(&s.ip);
+        uint locals_sz = ip_read_half_int(&s.ip);
+        uint max_additional_stack_sz = ip_read_half_int(&s.ip);
         if (s.fp != NULL && s.call_ip == NULL) {
           s_failure(&s, "begin should only be called after call");
         }
         s_enter_f(s.call_ip /*ip from call*/, s.is_closure_call, args_sz,
                   locals_sz);
+        // TODO: add ifdef
+        if ((void **)__gc_stack_top + (aint)max_additional_stack_sz - 1 <= s.stack) {
+          s_failure(&s, "stack owerflow");
+        }
         break;
       }
 
-      // TODO: read req stack from second part of args
       case CMD_CTRL_CBEGIN: { // CBEGIN %d %d
         // NOTE: example not found, no checks done
-        int args_sz = ip_read_int(&s.ip);
-        int locals_sz = ip_read_int(&s.ip);
+        uint args_sz = ip_read_int(&s.ip);
+        uint max_additional_stack_sz = ip_read_half_int(&s.ip);
+        uint locals_sz = ip_read_half_int(&s.ip);
         if (s.fp != NULL && s.call_ip == NULL) {
           s_failure(&s, "begin should only be called after call");
         }
         s_enter_f(s.call_ip /*ip from call*/, s.is_closure_call, args_sz,
                   locals_sz);
+        // TODO: add ifdef
+        if ((void **)__gc_stack_top + (aint)max_additional_stack_sz - 1 <= s.stack) {
+          s_failure(&s, "stack owerflow");
+        }
         break;
       }
 
