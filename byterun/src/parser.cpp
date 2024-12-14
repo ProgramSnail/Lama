@@ -320,7 +320,8 @@ static inline void read_print_cmd_seq(Cmd cmd, uint8_t l, char **ip,
 }
 
 template <bool use_out>
-Cmd parse_command_impl(char **ip, const Bytefile &bf, std::ostream &out) {
+std::pair<Cmd, uint8_t> parse_command_impl(char **ip, const Bytefile &bf,
+                                           std::ostream &out) {
   static const char *const ops[] = {
 #define OP_TO_STR(id, op) "op",
       FORALL_BINOP(OP_TO_STR)
@@ -562,13 +563,14 @@ Cmd parse_command_impl(char **ip, const Bytefile &bf, std::ostream &out) {
 #ifdef DEBUG_VERSION
   std::cout << command_name(cmd, l) << '\n';
 #endif
-  return cmd;
+  return {cmd, l};
 }
 
-Cmd parse_command(char **ip, const Bytefile &bf) {
+std::pair<Cmd, uint8_t> parse_command(char **ip, const Bytefile &bf) {
   return parse_command_impl<false>(ip, bf, std::clog);
 }
 
-Cmd parse_command(char **ip, const Bytefile &bf, std::ostream &out) {
+std::pair<Cmd, uint8_t> parse_command(char **ip, const Bytefile &bf,
+                                      std::ostream &out) {
   return parse_command_impl<true>(ip, bf, out);
 }

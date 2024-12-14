@@ -267,6 +267,7 @@ void run(Bytefile *bf, int argc, char **argv) {
         break;
       }
 
+      // TODO: read req stack from second part or args
       case CMD_CTRL_BEGIN: { // BEGIN %d %d // function begin
         int args_sz = ip_read_int(&s.ip);
         int locals_sz = ip_read_int(&s.ip);
@@ -278,6 +279,7 @@ void run(Bytefile *bf, int argc, char **argv) {
         break;
       }
 
+      // TODO: read req stack from second part of args
       case CMD_CTRL_CBEGIN: { // CBEGIN %d %d
         // NOTE: example not found, no checks done
         int args_sz = ip_read_int(&s.ip);
@@ -295,11 +297,11 @@ void run(Bytefile *bf, int argc, char **argv) {
         aint call_offset = ip_read_int(&s.ip);
         aint args_count = ip_read_int(&s.ip);
         for (aint i = 0; i < args_count; i++) {
-          aint arg_type = ip_read_byte(&s.ip);
-          aint arg_id = ip_read_int(&s.ip);
+          uint8_t arg_type = ip_read_byte(&s.ip);
+          auint arg_id = ip_read_int(&s.ip);
 
           void **var_ptr =
-              var_by_category(to_var_category(l), ip_read_int(&s.ip));
+              var_by_category(to_var_category(arg_type), arg_id);
           s_push(*var_ptr);
         }
         if (call_offset >= bf->code_size) {

@@ -273,8 +273,6 @@ static inline void **var_by_category(enum VarCategory category, size_t id) {
                 "can't read arguments: too big id"); //, %i >= %ul", id, count);
     }
     return (void **)d->contents + id; // order is not important
-    break;
-    break;
   }
 
   return var;

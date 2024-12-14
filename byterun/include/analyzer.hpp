@@ -4,4 +4,4 @@ extern "C" {
 #include "utils.h"
 }
 
-void analyze(const Bytefile &bf);
+void analyze(Bytefile *bf);
