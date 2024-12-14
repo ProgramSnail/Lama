@@ -15,16 +15,8 @@ build:
 install: all
 	dune b @install --profile=release
 	dune    install --profile=release
-	$(MKDIR) -p `opam var share`/Lama/x64
-	$(INSTALL) $(shell ls _build/default/stdlib/x64/*.[oi] _build/default/stdlib/x64/stdlib/*.lama \
-		runtime/runtime.a runtime/Std.i) \
-		`opam var share`/Lama/x64
-	$(MKDIR) -p `opam var share`/Lama/x32
-	$(INSTALL) $(shell ls _build/default/stdlib/x32/*.[oi] _build/default/stdlib/x32/stdlib/*.lama \
-		runtime32/runtime.a runtime32/Std.i) \
-		`opam var share`/Lama/x32
 
-_build/default/Lama.install: 
+_build/default/Lama.install:
 	dune b @install
 
 uninstall: _build/default/Lama.install
@@ -36,7 +28,7 @@ regression-all: regression regression-expressions
 
 test: regression
 regression:
-	dune test regression
+	dune test regression stdlib/regression
 
 regression-expressions:
 	dune test regression_long
