@@ -20,13 +20,13 @@ extern size_t __gc_stack_top, __gc_stack_bottom;
 #define POST_GC()                                                                                  \
   if (flag) { __gc_stack_top = 0; }
 
-_Noreturn static void vfailure (char *s, va_list args) {
+static void vfailure (const char *s, va_list args) {
   fprintf(stderr, "*** FAILURE: ");
   vfprintf(stderr, s, args);   // vprintf (char *, va_list) <-> printf (char *, ...)
   exit(255);
 }
 
-_Noreturn void failure (char *s, ...) {
+void failure (const char *s, ...) {
   va_list args;
 
   va_start(args, s);
