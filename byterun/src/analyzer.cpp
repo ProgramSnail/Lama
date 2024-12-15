@@ -317,7 +317,7 @@ void analyze(Bytefile *bf) {
       break;
     case Cmd::PATT:
       --current_stack_depth;
-      if (l == 0) { // to arg for '=str' // FIXME: magic const
+      if (l == CMD_PATT_STR) {
         --current_stack_depth;
       }
       if (current_stack_depth < 0) {
