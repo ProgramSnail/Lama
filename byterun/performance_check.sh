@@ -19,4 +19,11 @@ time ./old_byterun.exe -i Sort.bc > /dev/null
 echo "Byterun:"
 time ./byterun.exe -vi Sort.bc > /dev/null
 
+echo "Byterun (verefication only):"
+time ./byterun.exe -v Sort.bc > /dev/null
+
+echo "Byterun (run only):"
+time ./byterun.exe -i Sort.bc > /dev/null
+
 rm Sort.*
+rm *.o

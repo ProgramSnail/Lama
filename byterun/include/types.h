@@ -69,12 +69,12 @@ void construct_state(Bytefile *bf, struct State *s, void **stack);
 void cleanup_state(struct State *state);
 
 static inline void s_failure(struct State *s, const char *msg) {
-  exec_failure(read_cmd(s->instr_ip), s->current_line,
+  exec_failure(read_cmd(s->instr_ip, s->bf), s->current_line,
                s->instr_ip - s->bf->code_ptr, msg);
 }
 
 static inline void ip_failure(char *ip, Bytefile *bf, const char *msg) {
-  exec_failure(read_cmd(ip), 0, ip - bf->code_ptr, msg);
+  exec_failure(read_cmd(ip, bf), 0, ip - bf->code_ptr, msg);
 }
 
 static inline void ip_safe_failure(char *ip, Bytefile *bf, const char *msg) {
@@ -99,7 +99,7 @@ static inline enum VarCategory to_var_category(uint8_t category) {
   return (enum VarCategory)category;
 }
 
-enum CMD {
+enum CMD_TOPLVL {
   CMD_BINOP = 0,
   CMD_BASIC,
   CMD_LD,
@@ -112,7 +112,7 @@ enum CMD {
 };
 
 enum CMD_BINOPS {
-  CMD_BINOP_ADD = 1, // +
+  CMD_BINOP_ADD = 0, // +
   CMD_BINOP_SUB,     // -
   CMD_BINOP_MULT,    // *
   CMD_BINOP_DIV,     // /

@@ -196,9 +196,11 @@ static inline void s_enter_f(char *rp, bool is_closure_call, auint args_sz,
 }
 
 static inline void s_exit_f() {
+#ifndef WITH_CHECK
   if (s.fp == NULL) {
     s_failure(&s, "exit: no func");
   }
+#endif
 
   struct Frame frame = *s.fp;
 
@@ -274,13 +276,15 @@ static inline void **var_by_category(enum VarCategory category, size_t id) {
 #endif
     var = f_args(s.fp) + (f_args_sz(s.fp) - id - 1);
     break;
-  case VAR_CLOSURE: // TODO: check that clojure vars are used only in clojures
+  case VAR_CLOSURE:
+#ifndef WITH_CHECK
     if (s.fp == NULL) {
       s_failure(&s, "can't read closure parameter outside of function");
     }
     if (s.fp->closure == NULL) {
       s_failure(&s, "can't read closure parameter not in closure");
     }
+#endif
     if (UNBOXED(s.fp->closure)) {
       s_failure(&s, "not boxed value expected in closure index");
     }

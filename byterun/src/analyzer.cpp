@@ -1,6 +1,7 @@
 #include "analyzer.hpp"
 #include "parser.hpp"
 #include <iostream>
+#include <limits>
 
 extern "C" {
 #include "types.h"
@@ -20,6 +21,7 @@ void analyze(Bytefile *bf) {
   const uint globals_count = bf->global_area_size;
   uint current_locals_count = 0;
   uint current_args_count = 0;
+  bool is_in_closure = false;
   uint16_t *current_begin_counter = nullptr;
 
   char *ip = bf->code_ptr;
@@ -33,7 +35,6 @@ void analyze(Bytefile *bf) {
       visited[offset] = current_stack_depth;
       to_visit_jmp.push_back(offset);
     } else if (visited[offset] != current_stack_depth) {
-      // TODO: is this condition same for calls?
       ip_failure(saved_current_ip, bf,
                  "different stack depth on same point is not allowed");
     }
@@ -61,8 +62,8 @@ void analyze(Bytefile *bf) {
   };
 
   auto const check_correct_var = [&saved_current_ip, &bf, &globals_count,
-                                  &current_locals_count,
-                                  &current_args_count](uint8_t l, uint id) {
+                                  &current_locals_count, &current_args_count,
+                                  &is_in_closure](uint8_t l, uint id) {
     if (l > 3) {
       ip_failure(saved_current_ip, bf, "unexpected variable category");
     }
@@ -84,7 +85,11 @@ void analyze(Bytefile *bf) {
       }
       break;
     case VAR_CLOSURE:
-      // NOTE: impossible to properly check there (?)
+      if (!is_in_closure) {
+        ip_failure(saved_current_ip, bf,
+                   "can't access closure vars outside of closure");
+      }
+      // NOTE: impossible to properly check bounds there
       break;
     }
   };
@@ -92,7 +97,7 @@ void analyze(Bytefile *bf) {
   // add publics
   to_visit_func.reserve(bf->public_symbols_number);
   for (size_t i = 0; i < bf->public_symbols_number; ++i) {
-    func_control_push(get_public_offset(bf, i));
+    func_control_push(get_public_offset_safe(bf, i));
   }
 
   if (to_visit_func.size() == 0) {
@@ -129,9 +134,9 @@ void analyze(Bytefile *bf) {
     saved_current_ip = current_ip;
 
 #ifdef DEBUG_VERSION
-    const auto [cmd, l] = parse_command(&ip, *bf, std::cout);
+    const auto [cmd, l] = parse_command(&ip, bf, std::cout);
 #else
-    const auto [cmd, l] = parse_command(&ip, *bf);
+    const auto [cmd, l] = parse_command(&ip, bf);
 #endif
 
     if (current_begin_counter == nullptr && cmd != Cmd::BEGIN &&
@@ -167,8 +172,8 @@ void analyze(Bytefile *bf) {
       ++current_stack_depth;
       break;
     case Cmd::SEXP:
-      ip_read_string(&current_ip, *bf);
-      current_stack_depth -= ip_read_int(&current_ip, *bf);
+      ip_read_string_unsafe(&current_ip, bf);
+      current_stack_depth -= ip_read_int_unsafe(&current_ip);
       if (current_stack_depth < 0) {
         ip_failure(saved_current_ip, bf, "not enough elements in stack");
       }
@@ -215,15 +220,15 @@ void analyze(Bytefile *bf) {
       ++current_stack_depth;
       break;
     case Cmd::LD:
-      check_correct_var(l, ip_read_int(&current_ip, *bf));
+      check_correct_var(l, ip_read_int_unsafe(&current_ip));
       ++current_stack_depth;
       break;
     case Cmd::LDA:
-      check_correct_var(l, ip_read_int(&current_ip, *bf));
+      check_correct_var(l, ip_read_int_unsafe(&current_ip));
       ++current_stack_depth;
       break;
     case Cmd::ST:
-      check_correct_var(l, ip_read_int(&current_ip, *bf));
+      check_correct_var(l, ip_read_int_unsafe(&current_ip));
       if (current_stack_depth < 1) {
         ip_failure(saved_current_ip, bf, "not enough elements in stack");
       }
@@ -237,47 +242,60 @@ void analyze(Bytefile *bf) {
       if (current_begin_counter != nullptr) {
         ip_failure(saved_current_ip, bf, "unexpected function beginning");
       }
-      current_args_count = ip_read_int(&current_ip, *bf);
+      current_args_count = ip_read_int_unsafe(&current_ip);
       current_begin_counter = (uint16_t *)(current_ip + sizeof(uint16_t));
-      current_locals_count = ip_read_int(&current_ip, *bf);
-      // TODO: check uint16_t max ??
+      current_locals_count = ip_read_int_unsafe(&current_ip);
+      if (current_locals_count >= std::numeric_limits<uint16_t>::max()) {
+        ip_failure(saved_current_ip, bf, "too many locals in functions");
+      }
       (*(uint16_t *)(current_ip - sizeof(uint16_t))) = current_locals_count;
       *current_begin_counter = 0;
+      is_in_closure = (cmd == Cmd::CBEGIN);
       break;
     case Cmd::CLOSURE: {
-      ip_read_int(&ip, *bf);                             // offset
-      size_t args_count = ip_read_int(&current_ip, *bf); // args count
+      uint closure_offset = ip_read_int_unsafe(&current_ip); // closure offset
+      size_t args_count = ip_read_int_unsafe(&current_ip);   // args count
       extra_stack_during_opr = args_count;
       for (aint i = 0; i < args_count; i++) {
-        aint arg_type = ip_read_byte(&current_ip, *bf);
-        aint arg_id = ip_read_int(&current_ip, *bf);
+        aint arg_type = ip_read_byte_unsafe(&current_ip);
+        aint arg_id = ip_read_int_unsafe(&current_ip);
         check_correct_var(arg_type, arg_id);
       }
       ++current_stack_depth;
+
+      if (closure_offset >= bf->code_size) {
+        ip_failure(saved_current_ip, bf, "jump/call out of file");
+      }
+
+      if (!is_command_name(bf->code_ptr + closure_offset, bf, Cmd::CBEGIN)) {
+        ip_failure(saved_current_ip, bf, "closure should point to cbegin");
+      }
     } break;
     case Cmd::CALLC: {
-      uint args_count = ip_read_int(&current_ip, *bf);
+      uint args_count = ip_read_int_unsafe(&current_ip);
       current_stack_depth -= args_count + 1; // + closure itself
       if (current_stack_depth < 0) {
         ip_failure(saved_current_ip, bf, "not enough elements in stack");
       }
       ++current_stack_depth;
-      // NOTE: can't check args == cbegin args (?)
+      // NOTE: can't check args == cbegin args
     } break;
     case Cmd::CALL: {
-      uint call_offset = ip_read_int(&current_ip, *bf); // call offset
-      uint args_count = ip_read_int(&current_ip, *bf);
+      uint call_offset = ip_read_int_unsafe(&current_ip); // call offset
+      uint args_count = ip_read_int_unsafe(&current_ip);
       current_stack_depth -= args_count;
       if (current_stack_depth < 0) {
         ip_failure(saved_current_ip, bf, "not enough elements in stack");
       }
       ++current_stack_depth;
 
-      // TODO: unify with next loop
       if (call_offset >= bf->code_size) {
         ip_failure(saved_current_ip, bf, "jump/call out of file");
       }
 
+      if (!is_command_name(bf->code_ptr + call_offset, bf, Cmd::BEGIN)) {
+        ip_failure(saved_current_ip, bf, "call should point to begin");
+      }
       if (args_count != *(uint *)(bf->code_ptr + call_offset + 1)) {
         ip_failure(saved_current_ip, bf, "wrong call argument count");
       }
@@ -318,7 +336,7 @@ void analyze(Bytefile *bf) {
       }
       break;
     case Cmd::Barray:
-      current_stack_depth -= ip_read_int(&current_ip, *bf); // elem count
+      current_stack_depth -= ip_read_int_unsafe(&current_ip); // elem count
       if (current_stack_depth < 0) {
         ip_failure(saved_current_ip, bf, "not enough elements in stack");
       }
@@ -362,7 +380,7 @@ void analyze(Bytefile *bf) {
     case Cmd::JMP: {
       bool is_call = (cmd == Cmd::CLOSURE || cmd == Cmd::CALL);
 
-      uint jmp_p = ip_read_int(&current_ip, *bf);
+      uint jmp_p = ip_read_int_unsafe(&current_ip);
       if (jmp_p >= bf->code_size) {
         // NOTE: maybe also should check that > begin (?)
         ip_failure(saved_current_ip, bf, "jump/call out of file");

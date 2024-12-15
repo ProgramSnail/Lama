@@ -26,28 +26,106 @@ static inline void exec_failure(const char *cmd, int line, aint offset,
           msg);
 }
 
+// --- unsafe versions
+
+// access data
+
 /* Gets a string from a string table by an index */
-static inline const char *get_string(const Bytefile *f, size_t pos) {
-  if (pos >= f->stringtab_size) {
-    failure("strinpg pos is out of range: %zu >= %i\n", pos, f->stringtab_size);
-  }
-  return &f->string_ptr[pos];
+static inline const char *get_string_unsafe(const Bytefile *bf, size_t pos) {
+  return &bf->string_ptr[pos];
+}
+
+/* Gets a name offset for a public symbol */
+static inline size_t get_public_name_offset_unsafe(const Bytefile *bf,
+                                                   size_t i) {
+  return bf->public_ptr[i * 2];
 }
 
 /* Gets a name for a public symbol */
-static inline const char *get_public_name(const Bytefile *f, size_t i) {
-  if (i >= f->public_symbols_number) {
-    failure("public number is out of range: %zu >= %i\n", i,
-            f->public_symbols_number);
-  }
-  return get_string(f, f->public_ptr[i * 2]);
+static inline const char *get_public_name_unsafe(const Bytefile *bf, size_t i) {
+  return get_string_unsafe(bf, get_public_name_offset_unsafe(bf, i));
 }
 
 /* Gets an offset for a publie symbol */
-static inline size_t get_public_offset(const Bytefile *f, size_t i) {
+static inline size_t get_public_offset_unsafe(const Bytefile *bf, size_t i) {
+  return bf->public_ptr[i * 2 + 1];
+}
+
+// read from ip
+
+static inline uint16_t ip_read_half_int_unsafe(char **ip) {
+  *ip += sizeof(uint16_t);
+  return *(uint16_t *)((*ip) - sizeof(uint16_t));
+}
+
+static inline int32_t ip_read_int_unsafe(char **ip) {
+  *ip += sizeof(int32_t);
+  return *(int32_t *)((*ip) - sizeof(int32_t));
+}
+
+static inline uint8_t ip_read_byte_unsafe(char **ip) { return *(*ip)++; }
+
+static inline const char *ip_read_string_unsafe(char **ip, const Bytefile *bf) {
+  return get_string_unsafe(bf, ip_read_int_unsafe(ip));
+}
+// --- safe versions
+
+// access data
+
+/* Gets a string from a string table by an index */
+static inline const char *get_string_safe(const Bytefile *f, size_t pos) {
+  if (pos >= f->stringtab_size) {
+    failure("string pos is out of range: %zu >= %i\n", pos, f->stringtab_size);
+  }
+  return get_string_unsafe(f, pos);
+}
+
+/* Gets a name offset for a public symbol */
+static inline size_t get_public_name_offset_safe(const Bytefile *f, size_t i) {
   if (i >= f->public_symbols_number) {
     failure("public number is out of range: %zu >= %i\n", i,
             f->public_symbols_number);
   }
-  return f->public_ptr[i * 2 + 1];
+  return get_public_name_offset_unsafe(f, i);
+}
+
+/* Gets a name for a public symbol */
+static inline const char *get_public_name_safe(const Bytefile *f, size_t i) {
+  return get_string_safe(f, get_public_name_offset_safe(f, i));
+}
+
+/* Gets an offset for a publie symbol */
+static inline size_t get_public_offset_safe(const Bytefile *f, size_t i) {
+  if (i >= f->public_symbols_number) {
+    failure("public number is out of range: %zu >= %i\n", i,
+            f->public_symbols_number);
+  }
+  return get_public_offset_unsafe(f, i);
+}
+
+// read from ip
+
+static inline uint16_t ip_read_half_int_safe(char **ip, const Bytefile *bf) {
+  if (*ip + sizeof(uint16_t) > bf->code_ptr + bf->code_size) {
+    failure("last command is invalid, int parameter can not be read\n");
+  }
+  return ip_read_half_int_unsafe(ip);
+}
+
+static inline int32_t ip_read_int_safe(char **ip, const Bytefile *bf) {
+  if (*ip + sizeof(int32_t) > bf->code_ptr + bf->code_size) {
+    failure("last command is invalid, int parameter can not be read\n");
+  }
+  return ip_read_int_unsafe(ip);
+}
+
+static inline uint8_t ip_read_byte_safe(char **ip, const Bytefile *bf) {
+  if (*ip + sizeof(char) > bf->code_ptr + bf->code_size) {
+    failure("last command is invalid, byte parameter can not be read\n");
+  }
+  return ip_read_byte_unsafe(ip);
+}
+
+static inline const char *ip_read_string_safe(char **ip, const Bytefile *bf) {
+  return get_string_safe(bf, ip_read_int_safe(ip, bf));
 }

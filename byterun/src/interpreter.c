@@ -8,6 +8,9 @@
 #include "types.h"
 #include "utils.h"
 
+void *__start_custom_data;
+void *__stop_custom_data;
+
 #define ASSERT_UNBOXED(memo, x)                                                \
   do                                                                           \
     if (!UNBOXED(x))                                                           \
@@ -17,36 +20,35 @@
 struct State s;
 
 static inline uint16_t ip_read_half_int(char **ip) {
-#ifndef WITH_CHECK
-  if (*ip + sizeof(uint16_t) > s.bf->code_ptr + s.bf->code_size) {
-    failure("last command is invalid, int parameter can not be read\n");
-  }
+#ifdef WITH_CHECK
+  return ip_read_half_int_unsafe(ip);
+#else
+  return ip_read_half_int_safe(ip, s.bf);
 #endif
-  *ip += sizeof(uint16_t);
-  return *(uint16_t *)((*ip) - sizeof(uint16_t));
 }
 
 static inline int ip_read_int(char **ip) {
-#ifndef WITH_CHECK
-  if (*ip + sizeof(int) > s.bf->code_ptr + s.bf->code_size) {
-    failure("last command is invalid, int parameter can not be read\n");
-  }
+#ifdef WITH_CHECK
+  return ip_read_int_unsafe(ip);
+#else
+  return ip_read_int_safe(ip, s.bf);
 #endif
-  *ip += sizeof(int);
-  return *(int *)((*ip) - sizeof(int));
 }
 
 static inline uint8_t ip_read_byte(char **ip) {
-#ifndef WITH_CHECK
-  if (*ip + sizeof(char) > s.bf->code_ptr + s.bf->code_size) {
-    failure("last command is invalid, byte parameter can not be read\n");
-  }
+#ifdef WITH_CHECK
+  return ip_read_byte_unsafe(ip);
+#else
+  return ip_read_byte_safe(ip, s.bf);
 #endif
-  return *(*ip)++;
 }
 
 static inline const char *ip_read_string(char **ip) {
-  return get_string(s.bf, ip_read_int(ip));
+#ifdef WITH_CHECK
+  return get_string_unsafe(s.bf, ip_read_int(ip));
+#else
+  return get_string_safe(s.bf, ip_read_int(ip));
+#endif
 }
 
 const size_t BUFFER_SIZE = 1000;
@@ -107,7 +109,7 @@ void run(Bytefile *bf, int argc, char **argv) {
       if (l == CMD_BINOP_SUB) {
         s_push_i(Ls__Infix_45(fst, snd));
       } else {
-        switch (l) {
+        switch (l - 1) {
 #define BINOP_OPR(val, op)                                                     \
   case val:                                                                    \
     ASSERT_UNBOXED("captured op:1", fst);                                      \
@@ -305,7 +307,6 @@ void run(Bytefile *bf, int argc, char **argv) {
         s_enter_f(s.call_ip /*ip from call*/, s.is_closure_call, args_sz,
                   locals_sz);
 #ifndef WITH_CHECK
-        // TODO
         if ((void **)__gc_stack_top + (aint)max_additional_stack_sz - 1 <= s.stack) {
           s_failure(&s, "stack owerflow");
         }
@@ -329,7 +330,6 @@ void run(Bytefile *bf, int argc, char **argv) {
 #endif
         s_enter_f(s.call_ip /*ip from call*/, s.is_closure_call, args_sz,
                   locals_sz);
-        // TODO: add ifdef
 #ifdef WITH_CHECK
         if ((void **)__gc_stack_top + (aint)max_additional_stack_sz - 1 <= s.stack) {
           s_failure(&s, "stack owerflow");
