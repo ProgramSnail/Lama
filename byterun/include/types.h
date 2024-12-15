@@ -73,6 +73,14 @@ static inline void s_failure(struct State *s, const char *msg) {
                s->instr_ip - s->bf->code_ptr, msg);
 }
 
+static inline void ip_failure(char *ip, Bytefile *bf, const char *msg) {
+  exec_failure(read_cmd(ip), 0, ip - bf->code_ptr, msg);
+}
+
+static inline void ip_safe_failure(char *ip, Bytefile *bf, const char *msg) {
+  exec_failure("_UNDEF_", 0, ip - bf->code_ptr, msg);
+}
+
 // ------ VarCategory ------
 
 enum VarCategory {

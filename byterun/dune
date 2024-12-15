@@ -10,6 +10,20 @@
  (mode
   (promote (until-clean)))
  (action
+  (run g++ -std=c++20 -DWITH_CHECK -Iinclude/ %{main} %{parser} %{analyzer} %{runtime} %{obj} -o %{target})))
+
+(rule
+ (target old_byterun.exe)
+ (deps
+  (:include (source_tree include))
+  (:main src/cli.cpp)
+  (:parser src/parser.cpp)
+  (:analyzer src/analyzer.cpp)
+  (:obj old_types.o old_parser.o old_interpreter.o)
+  (:runtime ../runtime/runtime.a))
+ (mode
+  (promote (until-clean)))
+ (action
   (run g++ -std=c++20 -Iinclude/ %{main} %{parser} %{analyzer} %{runtime} %{obj} -o %{target})))
 
 (rule
@@ -21,7 +35,7 @@
  (mode
   (promote (until-clean)))
  (action
-  (run gcc -Iinclude/ -c %{src} -o %{target})))
+  (run gcc -Iinclude/ -DWITH_CHECK -c %{src} -o %{target})))
 
 (rule
  (target parser.o)
@@ -32,10 +46,43 @@
  (mode
   (promote (until-clean)))
  (action
-  (run gcc -Iinclude/ -c %{src} -o %{target})))
+  (run gcc -Iinclude/ -DWITH_CHECK -c %{src} -o %{target})))
 
 (rule
  (target interpreter.o)
+ (deps
+  (:include (source_tree include))
+  (:src src/interpreter.c)
+  (:runtime ../runtime/runtime.a))
+ (mode
+  (promote (until-clean)))
+ (action
+  (run gcc -Iinclude/ -DWITH_CHECK -c %{src} -o %{target})))
+
+(rule
+ (target old_types.o)
+ (deps
+  (:include (source_tree include))
+  (:src src/types.c)
+  (:runtime ../runtime/runtime.a))
+ (mode
+  (promote (until-clean)))
+ (action
+  (run gcc -Iinclude/ -c %{src} -o %{target})))
+
+(rule
+ (target old_parser.o)
+ (deps
+  (:include (source_tree include))
+  (:src src/parser.c)
+  (:runtime ../runtime/runtime.a))
+ (mode
+  (promote (until-clean)))
+ (action
+  (run gcc -Iinclude/ -c %{src} -o %{target})))
+
+(rule
+ (target old_interpreter.o)
  (deps
   (:include (source_tree include))
   (:src src/interpreter.c)

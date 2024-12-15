@@ -17,25 +17,31 @@
 struct State s;
 
 static inline uint16_t ip_read_half_int(char **ip) {
+#ifndef WITH_CHECK
   if (*ip + sizeof(uint16_t) > s.bf->code_ptr + s.bf->code_size) {
     failure("last command is invalid, int parameter can not be read\n");
   }
+#endif
   *ip += sizeof(uint16_t);
   return *(uint16_t *)((*ip) - sizeof(uint16_t));
 }
 
 static inline int ip_read_int(char **ip) {
+#ifndef WITH_CHECK
   if (*ip + sizeof(int) > s.bf->code_ptr + s.bf->code_size) {
     failure("last command is invalid, int parameter can not be read\n");
   }
+#endif
   *ip += sizeof(int);
   return *(int *)((*ip) - sizeof(int));
 }
 
 static inline uint8_t ip_read_byte(char **ip) {
+#ifndef WITH_CHECK
   if (*ip + sizeof(char) > s.bf->code_ptr + s.bf->code_size) {
     failure("last command is invalid, byte parameter can not be read\n");
   }
+#endif
   return *(*ip)++;
 }
 
@@ -73,6 +79,7 @@ void run(Bytefile *bf, int argc, char **argv) {
   do {
     bool call_happened = false;
 
+#ifndef WITH_CHECK
     if (s.ip >= bf->code_ptr + bf->code_size) {
       s_failure(&s, "instruction pointer is out of range (>= size)");
     }
@@ -80,6 +87,7 @@ void run(Bytefile *bf, int argc, char **argv) {
     if (s.ip < bf->code_ptr) {
       s_failure(&s, "instruction pointer is out of range (< 0)");
     }
+#endif
 
     s.instr_ip = s.ip;
     uint8_t x = ip_read_byte(&s.ip), h = (x & 0xF0) >> 4, l = x & 0x0F;
@@ -179,9 +187,11 @@ void run(Bytefile *bf, int argc, char **argv) {
       case CMD_BASIC_JMP: { // JMP 0x%.8x
         uint jmp_p = ip_read_int(&s.ip);
 
+#ifndef WITH_CHECK
         if (jmp_p >= bf->code_size) {
           s_failure(&s, "jump out of file");
         }
+#endif
         s.ip = bf->code_ptr + jmp_p;
         break;
       }
@@ -254,9 +264,11 @@ void run(Bytefile *bf, int argc, char **argv) {
       case CMD_CTRL_CJMPz: { // CJMPz 0x%.8x
         uint jmp_p = ip_read_int(&s.ip);
 
+#ifndef WITH_CHECK
         if (jmp_p >= bf->code_size) {
           s_failure(&s, "jump out of file");
         }
+#endif
         if (UNBOX(s_pop_i()) == 0) {
           s.ip = bf->code_ptr + jmp_p;
         }
@@ -266,9 +278,11 @@ void run(Bytefile *bf, int argc, char **argv) {
       case CMD_CTRL_CJMPnz: { // CJMPnz  0x%.8x
         uint jmp_p = ip_read_int(&s.ip);
 
+#ifndef WITH_CHECK
         if (jmp_p >= bf->code_size) {
           s_failure(&s, "jump out of file");
         }
+#endif
         if (UNBOX(s_pop_i()) != 0) {
           s.ip = bf->code_ptr + jmp_p;
         }
@@ -277,34 +291,50 @@ void run(Bytefile *bf, int argc, char **argv) {
 
       case CMD_CTRL_BEGIN: { // BEGIN %d %d // function begin
         uint args_sz = ip_read_int(&s.ip);
+// #ifdef WITH_CHECK
         uint locals_sz = ip_read_half_int(&s.ip);
         uint max_additional_stack_sz = ip_read_half_int(&s.ip);
+// #else
+//         uint locals_sz = ip_read_int(&s.ip);
+// #endif
+#ifdef WITH_CHECK
         if (s.fp != NULL && s.call_ip == NULL) {
           s_failure(&s, "begin should only be called after call");
         }
+#endif
         s_enter_f(s.call_ip /*ip from call*/, s.is_closure_call, args_sz,
                   locals_sz);
-        // TODO: add ifdef
+#ifndef WITH_CHECK
+        // TODO
         if ((void **)__gc_stack_top + (aint)max_additional_stack_sz - 1 <= s.stack) {
           s_failure(&s, "stack owerflow");
         }
+#endif
         break;
       }
 
       case CMD_CTRL_CBEGIN: { // CBEGIN %d %d
         // NOTE: example not found, no checks done
         uint args_sz = ip_read_int(&s.ip);
-        uint max_additional_stack_sz = ip_read_half_int(&s.ip);
+// #ifdef WITH_CHECK
         uint locals_sz = ip_read_half_int(&s.ip);
+        uint max_additional_stack_sz = ip_read_half_int(&s.ip);
+// #else
+        // uint locals_sz = ip_read_int(&s.ip);
+// #endif
+#ifndef WITH_CHECK
         if (s.fp != NULL && s.call_ip == NULL) {
           s_failure(&s, "begin should only be called after call");
         }
+#endif
         s_enter_f(s.call_ip /*ip from call*/, s.is_closure_call, args_sz,
                   locals_sz);
         // TODO: add ifdef
+#ifdef WITH_CHECK
         if ((void **)__gc_stack_top + (aint)max_additional_stack_sz - 1 <= s.stack) {
           s_failure(&s, "stack owerflow");
         }
+#endif
         break;
       }
 
@@ -320,9 +350,11 @@ void run(Bytefile *bf, int argc, char **argv) {
               var_by_category(to_var_category(arg_type), arg_id);
           s_push(*var_ptr);
         }
+#ifndef WITH_CHECK
         if (call_offset >= bf->code_size) {
           s_failure(&s, "jump out of file");
         }
+#endif
         s_push(bf->code_ptr + call_offset);
 
         void *closure = Bclosure((aint *)__gc_stack_top, args_count);
@@ -351,9 +383,11 @@ void run(Bytefile *bf, int argc, char **argv) {
         s.is_closure_call = false;
         s.call_ip = s.ip;
 
+#ifndef WITH_CHECK
         if (call_p >= bf->code_size) {
           s_failure(&s, "jump out of file");
         }
+#endif
         s.ip = bf->code_ptr + call_p;
         break;
       }

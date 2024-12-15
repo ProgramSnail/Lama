@@ -70,3 +70,5 @@ static inline const char *ip_read_string(char **ip, const Bytefile &bf) {
 std::pair<Cmd, uint8_t> parse_command(char **ip, const Bytefile &bf);
 std::pair<Cmd, uint8_t> parse_command(char **ip, const Bytefile &bf,
                                       std::ostream &out);
+
+void print_file(const Bytefile &bf, std::ostream &out);

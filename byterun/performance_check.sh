@@ -11,7 +11,12 @@ time echo '0' | lamac -s ../performance/Sort.lama > /dev/null
 
 lamac -b  ../performance/Sort.lama > /dev/null
 
+# ./byterun.exe -p Sort.bc
+
+echo "Old Byterun:"
+time ./old_byterun.exe -i Sort.bc > /dev/null
+
 echo "Byterun:"
-time ./byterun.exe Sort.bc > /dev/null
+time ./byterun.exe -vi Sort.bc > /dev/null
 
 rm Sort.*

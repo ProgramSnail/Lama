@@ -24,23 +24,27 @@ static inline bool s_is_empty() {
 }
 
 static inline void **s_nth(size_t n) {
+#ifndef WITH_CHECK
   if ((void **)__gc_stack_top + n >= s_top()) {
     s_failure(&s, "not enough elements in stack");
   }
   if (s.fp != NULL && (void **)__gc_stack_top + n >= f_locals(s.fp)) {
     s_failure(&s, "not enough elements in function stack");
   }
+#endif
 
   return (void **)__gc_stack_top + n;
 }
 
 static inline void **s_peek() {
+#ifndef WITH_CHECK
   if ((void **)__gc_stack_top == s_top()) {
     s_failure(&s, "empty stack");
   }
   if (s.fp != NULL && (void **)__gc_stack_top == f_locals(s.fp)) {
     s_failure(&s, "empty function stack");
   }
+#endif
 
   return (void **)__gc_stack_top;
 }
@@ -48,9 +52,11 @@ static inline void **s_peek() {
 static inline aint *s_peek_i() { return (aint *)s_peek(); }
 
 static inline void s_push(void *val) {
+#ifndef WITH_CHECK
   if ((void **)__gc_stack_top == s.stack) {
     s_failure(&s, "stack overflow");
   }
+#endif
 #ifdef DEBUG_VERSION
   printf("--> push\n");
 #endif
@@ -63,9 +69,11 @@ static inline void s_push_i(aint val) { s_push((void *)val); }
 static inline void s_push_nil() { s_push(NULL); }
 
 static inline void s_pushn_nil(size_t n) {
+#ifndef WITH_CHECK
   if ((void **)__gc_stack_top + (aint)n - 1 <= s.stack) {
     s_failure(&s, "stack overflow");
   }
+#endif
   for (size_t i = 0; i < n; ++i) {
     __gc_stack_top -= sizeof(void *);
     *(void **)__gc_stack_top = NULL;
@@ -73,12 +81,14 @@ static inline void s_pushn_nil(size_t n) {
 }
 
 static inline void *s_pop() {
+#ifndef WITH_CHECK
   if ((void **)__gc_stack_top == s_top()) {
     s_failure(&s, "empty stack");
   }
   if (s.fp != NULL && (void **)__gc_stack_top == f_locals(s.fp)) {
     s_failure(&s, "empty function stack");
   }
+#endif
 #ifdef DEBUG_VERSION
   printf("--> pop\n");
 #endif
@@ -102,12 +112,14 @@ static inline void s_popn(size_t n) {
 // behaviour
 static inline void s_put_nth(size_t n, void *val) {
   s_push_nil();
+#ifndef WITH_CHECK
   if ((void **)__gc_stack_top + n >= s_top()) {
     s_failure(&s, "not enough elements in stack");
   }
   if (s.fp != NULL && (void **)__gc_stack_top + n >= f_locals(s.fp)) {
     s_failure(&s, "not enough elements in function stack");
   }
+#endif
 
   for (size_t i = 0; i < n; ++i) {
     ((void **)__gc_stack_top)[i] = ((void **)__gc_stack_top)[i + 1];
@@ -117,12 +129,14 @@ static inline void s_put_nth(size_t n, void *val) {
 
 static inline void s_rotate_n(size_t n) {
   s_push_nil();
+#ifndef WITH_CHECK
   if ((void **)__gc_stack_top + (aint)n - 1 >= s_top()) {
     s_failure(&s, "not enough elements in stack");
   }
   if (s.fp != NULL && (void **)__gc_stack_top + (aint)n - 1 >= f_locals(s.fp)) {
     s_failure(&s, "not enough elements in function stack");
   }
+#endif
 
   void *buf = NULL;
   for (size_t i = 0; 2 * i < n; ++i) {
@@ -147,6 +161,7 @@ static inline void s_enter_f(char *rp, bool is_closure_call, auint args_sz,
   printf("-> %i locals sz\n", locals_sz);
 #endif
 
+  // TODO: move checks to BEGIN/CBEGIN
   // check that params count is valid
   if ((void **)__gc_stack_top + (aint)args_sz - (is_closure_call ? 0 : 1) >=
       s_top()) {
@@ -223,14 +238,17 @@ static inline void **var_by_category(enum VarCategory category, size_t id) {
   void **var = NULL;
   switch (category) {
   case VAR_GLOBAL:
+#ifndef WITH_CHECK
     if (s.bf->global_area_size <= id) {
       s_failure(&s,
                 "can't read global: too big id"); //, %i >= %ul", id,
                                                   // s.bf->global_area_size);
     }
+#endif
     var = s.stack + STACK_SIZE - 1 - id;
     break;
   case VAR_LOCAL:
+#ifndef WITH_CHECK
     if (s.fp == NULL) {
       s_failure(&s, "can't read local outside of function");
     }
@@ -238,12 +256,14 @@ static inline void **var_by_category(enum VarCategory category, size_t id) {
       s_failure(&s, "can't read local: too big id"); //, %i >= %ul", id,
                                                      // f_locals_sz(s.fp));
     }
+#endif
     // printf("id is %i, local is %i, %i\n", id,
     // UNBOX((auint)*((void**)f_locals(s.fp) + id)), f_locals(s.fp) - (void
     // **)__gc_stack_top);
     var = f_locals(s.fp) + (f_locals_sz(s.fp) - id - 1);
     break;
   case VAR_ARGUMENT:
+#ifndef WITH_CHECK
     if (s.fp == NULL) {
       s_failure(&s, "can't read argument outside of function");
     }
@@ -251,9 +271,10 @@ static inline void **var_by_category(enum VarCategory category, size_t id) {
       s_failure(&s, "can't read arguments: too big id"); //, %i >= %ul", id,
                                                          // f_args_sz(s.fp));
     }
+#endif
     var = f_args(s.fp) + (f_args_sz(s.fp) - id - 1);
     break;
-  case VAR_CLOSURE:
+  case VAR_CLOSURE: // TODO: check that clojure vars are used only in clojures
     if (s.fp == NULL) {
       s_failure(&s, "can't read closure parameter outside of function");
     }

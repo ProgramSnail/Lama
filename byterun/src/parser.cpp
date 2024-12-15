@@ -1,5 +1,6 @@
 #include <cassert>
 #include <errno.h>
+#include <iomanip>
 #include <iostream>
 #include <malloc.h>
 #include <string.h>
@@ -573,4 +574,19 @@ std::pair<Cmd, uint8_t> parse_command(char **ip, const Bytefile &bf) {
 std::pair<Cmd, uint8_t> parse_command(char **ip, const Bytefile &bf,
                                       std::ostream &out) {
   return parse_command_impl<true>(ip, bf, out);
+}
+
+void print_file(const Bytefile &bf, std::ostream &out) {
+  char *ip = bf.code_ptr;
+
+  while (true) {
+    out << std::setfill('0') << std::setw(8) << std::hex << ip - bf.code_ptr
+        << ": ";
+    const auto [cmd, l] = parse_command(&ip, bf, out);
+    out << '\n';
+
+    if (cmd == Cmd::EXIT) {
+      break;
+    }
+  }
 }
