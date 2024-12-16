@@ -11,8 +11,7 @@ extern "C" {
 
 void analyze(Bytefile *bf) {
   static constexpr const int NOT_VISITED = -1;
-  std::vector<int> visited(bf->code_size, NOT_VISITED);    // store stack depth
-  std::vector<bool> control_flow_in(bf->code_size, false); // store
+  std::vector<int> visited(bf->code_size, NOT_VISITED); // store stack depth
 
   std::vector<size_t> to_visit_func;
   std::vector<size_t> to_visit_jmp;
@@ -23,6 +22,7 @@ void analyze(Bytefile *bf) {
   uint current_args_count = 0;
   bool is_in_closure = false;
   uint16_t *current_begin_counter = nullptr;
+  int func_end_found = 0;
 
   char *ip = bf->code_ptr;
   char *current_ip = ip;
@@ -44,21 +44,12 @@ void analyze(Bytefile *bf) {
                                    &current_stack_depth,
                                    &to_visit_func](size_t offset) {
     if (visited[offset] == NOT_VISITED) {
+      visited[offset] = 0;
       to_visit_func.push_back(offset);
+    } else if (visited[offset] != 0) {
+      ip_failure(saved_current_ip, bf,
+                 "different stack depth on same point is not allowed");
     }
-    visited[offset] = 0;
-  };
-
-  auto const jmp_control_push = [&jmp_to_visit_push,
-                                 &control_flow_in](size_t offset) {
-    control_flow_in[offset] = true;
-    jmp_to_visit_push(offset);
-  };
-
-  auto const func_control_push = [&func_to_visit_push,
-                                  &control_flow_in](size_t offset) {
-    control_flow_in[offset] = true;
-    func_to_visit_push(offset);
   };
 
   auto const check_correct_var = [&saved_current_ip, &bf, &globals_count,
@@ -97,7 +88,7 @@ void analyze(Bytefile *bf) {
   // add publics
   to_visit_func.reserve(bf->public_symbols_number);
   for (size_t i = 0; i < bf->public_symbols_number; ++i) {
-    func_control_push(get_public_offset_safe(bf, i));
+    func_to_visit_push(get_public_offset_safe(bf, i));
   }
 
   if (to_visit_func.size() == 0) {
@@ -113,9 +104,13 @@ void analyze(Bytefile *bf) {
       ip += to_visit_func.back();
       to_visit_func.pop_back();
       current_stack_depth = 0;
+      func_end_found = 0;
     } else {
       if (to_visit_jmp.empty()) {
         current_begin_counter = nullptr;
+        if (func_end_found != 1) {
+          failure("each function should have exactly one end");
+        }
         continue;
       }
       ip += to_visit_jmp.back();
@@ -133,11 +128,11 @@ void analyze(Bytefile *bf) {
     current_ip = ip;
     saved_current_ip = current_ip;
 
-#ifdef DEBUG_VERSION
+    // #ifdef DEBUG_VERSION
     const auto [cmd, l] = parse_command(&ip, bf, std::cout);
-#else
-    const auto [cmd, l] = parse_command(&ip, bf);
-#endif
+    // #else
+    //     const auto [cmd, l] = parse_command(&ip, bf);
+    // #endif
 
     if (current_begin_counter == nullptr && cmd != Cmd::BEGIN &&
         cmd != Cmd::CBEGIN) {
@@ -149,9 +144,9 @@ void analyze(Bytefile *bf) {
     }
     current_stack_depth = visited[current_ip - bf->code_ptr];
 
-#ifdef DEBUG_VERSION
+    // #ifdef DEBUG_VERSION
     std::cout << " -- [" << current_stack_depth << ']' << '\n';
-#endif
+    // #endif
 
     ++current_ip; // skip command byte
 
@@ -196,6 +191,7 @@ void analyze(Bytefile *bf) {
     case Cmd::JMP:
       break;
     case Cmd::END:
+      ++func_end_found;
       --current_stack_depth;
       break;
     case Cmd::RET:
@@ -205,6 +201,9 @@ void analyze(Bytefile *bf) {
       --current_stack_depth;
       break;
     case Cmd::DUP:
+      if (current_stack_depth < 1) {
+        ip_failure(saved_current_ip, bf, "not enough elements in stack");
+      }
       ++current_stack_depth;
       break;
     case Cmd::SWAP:
@@ -263,13 +262,14 @@ void analyze(Bytefile *bf) {
       }
       ++current_stack_depth;
 
-      if (closure_offset >= bf->code_size) {
-        ip_failure(saved_current_ip, bf, "jump/call out of file");
-      }
+      // if (closure_offset >= bf->code_size) {
+      //   ip_failure(saved_current_ip, bf, "jump/call out of file");
+      // }
 
-      if (!is_command_name(bf->code_ptr + closure_offset, bf, Cmd::CBEGIN)) {
-        ip_failure(saved_current_ip, bf, "closure should point to cbegin");
-      }
+      // NOTE: is not always true
+      // if (!is_command_name(bf->code_ptr + closure_offset, bf, Cmd::CBEGIN)) {
+      //   ip_failure(saved_current_ip, bf, "closure should point to cbegin");
+      // }
     } break;
     case Cmd::CALLC: {
       uint args_count = ip_read_int_unsafe(&current_ip);
@@ -386,9 +386,9 @@ void analyze(Bytefile *bf) {
         ip_failure(saved_current_ip, bf, "jump/call out of file");
       }
       if (is_call) {
-        func_control_push(jmp_p);
+        func_to_visit_push(jmp_p);
       } else {
-        jmp_control_push(jmp_p);
+        jmp_to_visit_push(jmp_p);
       }
       break;
     }
