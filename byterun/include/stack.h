@@ -173,7 +173,9 @@ static inline void s_enter_f(char *rp, bool is_closure_call, auint args_sz,
     s_failure(&s, "not enough parameters in function stack");
   }
 
-  void *closure = is_closure_call ? s_nth(args_sz) : NULL;
+  void *closure = is_closure_call ? *s_nth(args_sz) : NULL;
+  // printf("is_closure_call: %i, closure: %li\n", is_closure_call,
+  // (aint)closure);
 
   // s_push_nil(s); // sp contains value, frame starts with next value
   s_pushn_nil(frame_sz());
@@ -289,15 +291,15 @@ static inline void **var_by_category(enum VarCategory category, size_t id) {
       s_failure(&s, "not boxed value expected in closure index");
     }
     data *d = TO_DATA(s.fp->closure);
-    size_t count = get_len(d) - 1;
+    int count = get_len(d) - 1;
 #ifdef DEBUG_VERSION
     printf("id is %i, count is %i\n", id, count);
 #endif
-    if (count <= id) {
+    if ((int64_t)id >= count) {
       s_failure(&s,
                 "can't read arguments: too big id"); //, %i >= %ul", id, count);
     }
-    return (void **)d->contents + id; // order is not important
+    return ((void **)d->contents) + count - id; // order is not important
   }
 
   return var;

@@ -14,7 +14,7 @@ void *__stop_custom_data;
 #define ASSERT_UNBOXED(memo, x)                                                \
   do                                                                           \
     if (!UNBOXED(x))                                                           \
-      failure("unboxed value expected in %s\n", memo);                         \
+      failure("%s: unboxed value expected in %s\n", __LINE__, memo);                         \
   while (0)
 
 struct State s;
@@ -94,9 +94,9 @@ void run(Bytefile *bf, int argc, char **argv) {
     s.instr_ip = s.ip;
     uint8_t x = ip_read_byte(&s.ip), h = (x & 0xF0) >> 4, l = x & 0x0F;
 
-#ifdef DEBUG_VERSION
-    printf("0x%.8x\n", s.ip - bf->code_ptr - 1);
-#endif
+// #ifdef DEBUG_VERSION
+    printf("0x%.8x: %s\n", s.ip - bf->code_ptr - 1, read_cmd(s.ip - 1, s.bf));
+// #endif
 
     switch (h) {
     case CMD_EXIT:
@@ -106,10 +106,13 @@ void run(Bytefile *bf, int argc, char **argv) {
     case CMD_BINOP: { // BINOP ops[l-1]
       void *snd = s_pop();
       void *fst = s_pop();
-      if (l == CMD_BINOP_SUB) {
+      int op = l - 1;
+      if (op == CMD_BINOP_SUB) {
         s_push_i(Ls__Infix_45(fst, snd));
+      } else if (op == CMD_BINOP_EQ) {
+        s_push_i(Ls__Infix_6161(fst, snd));
       } else {
-        switch (l - 1) {
+        switch (op) {
 #define BINOP_OPR(val, op)                                                     \
   case val:                                                                    \
     ASSERT_UNBOXED("captured op:1", fst);                                      \
@@ -357,7 +360,8 @@ void run(Bytefile *bf, int argc, char **argv) {
 #endif
         s_push(bf->code_ptr + call_offset);
 
-        void *closure = Bclosure((aint *)__gc_stack_top, args_count);
+        void *closure = Bclosure((aint *)__gc_stack_top, BOX(args_count));
+        // printf("args is %li, count is %li\n", args_count, get_len(TO_DATA(closure)));
 
         s_popn(args_count + 1);
         s_push(closure);
@@ -397,8 +401,8 @@ void run(Bytefile *bf, int argc, char **argv) {
         aint args_count = ip_read_int(&s.ip);
 
 #ifdef DEBUG_VERSION
-        printf("tag hash is %i, n is %i, peek is %i\n",
-               UNBOX(LtagHash((char *)name)), args_count, s_peek(&s));
+        printf("tag hash is %i, n is %i, peek is %i, unboxed: %li\n",
+               UNBOX(LtagHash((char *)name)), args_count, s_peek(&s), UNBOXED(s_peek(&s)));
 #endif
 
         s_push_i(Btag(s_pop(), LtagHash((char *)name), BOX(args_count)));

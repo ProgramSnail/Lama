@@ -128,11 +128,11 @@ void analyze(Bytefile *bf) {
     current_ip = ip;
     saved_current_ip = current_ip;
 
-    // #ifdef DEBUG_VERSION
+#ifdef DEBUG_VERSION
     const auto [cmd, l] = parse_command(&ip, bf, std::cout);
-    // #else
-    //     const auto [cmd, l] = parse_command(&ip, bf);
-    // #endif
+#else
+    const auto [cmd, l] = parse_command(&ip, bf);
+#endif
 
     if (current_begin_counter == nullptr && cmd != Cmd::BEGIN &&
         cmd != Cmd::CBEGIN) {
@@ -144,9 +144,9 @@ void analyze(Bytefile *bf) {
     }
     current_stack_depth = visited[current_ip - bf->code_ptr];
 
-    // #ifdef DEBUG_VERSION
+#ifdef DEBUG_VERSION
     std::cout << " -- [" << current_stack_depth << ']' << '\n';
-    // #endif
+#endif
 
     ++current_ip; // skip command byte
 

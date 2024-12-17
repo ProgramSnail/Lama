@@ -596,7 +596,7 @@ void print_file(const Bytefile &bf, std::ostream &out) {
 
   while (true) {
     out << std::setfill('0') << std::setw(8) << std::hex << ip - bf.code_ptr
-        << ": ";
+        << ": " << std::dec;
     const auto [cmd, l] = parse_command(&ip, &bf, out);
     out << '\n';
 

@@ -8,11 +8,12 @@ suffix=".lama"
 for test in ../regression/*.lama; do 
   echo $test
   lamac -b  $test > /dev/null
-  ./byterun.exe -v test*.bc > /dev/null
+  test_file="${test%.*}"
+  echo $test_file
+  cat $test_file.input | ./byterun.exe -vi test*.bc > /dev/null
   rm test*.bc
   echo "done"
 done
 
-rm test.bc
 rm *.o
 
