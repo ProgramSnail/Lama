@@ -11,12 +11,14 @@ extern size_t __gc_stack_top, __gc_stack_bottom;
 
 // --- State ---
 
-static void init_state(Bytefile *bf, struct State* s, void** stack) {
+void init_state(struct State* s, void** stack) {
   s->stack = stack;
-  s->bf = bf;
+  s->bf = NULL;
   s->is_closure_call = false;
-  s->ip = bf->code_ptr;
-  s->instr_ip = bf->code_ptr;
+  s->current_module_id = 0;
+  s->call_module_id = 0;
+  s->ip = s->bf->code_ptr;
+  s->instr_ip = s->bf->code_ptr;
   s->call_ip = NULL;
   s->current_line = 0;
 
@@ -24,23 +26,45 @@ static void init_state(Bytefile *bf, struct State* s, void** stack) {
     s->stack[i] = NULL;
   }
 
-  // printf("%p:%zu - %zu", s->stack, (size_t)s->stack, (size_t)s->stack & 0xF);
-
-  // s->sp = s->stack + STACK_SIZE; // [top -> bottom] stack
   s->fp = NULL;
-}
 
-void construct_state(Bytefile *bf, struct State* s, void** stack) {
-  __init();
-  init_state(bf, s, stack);
   __gc_stack_bottom = (size_t)(s->stack + STACK_SIZE);
   __gc_stack_top = __gc_stack_bottom;
-
-  s_pushn_nil(bf->global_area_size);
 
 #ifdef DEBUG_VERSION
   print_stack(s);
   printf("- state init done\n");
+#endif
+}
+
+void init_mod_state(uint mod_id, struct State* s) {
+  // init module data
+  s->bf = mod_get(mod_id);
+  s->current_module_id = mod_id;
+
+  // clearup from previous executions
+
+  s->is_closure_call = false;
+  s->current_module_id = 0;
+  s->call_module_id = 0;
+  s->call_ip = NULL;
+  s->current_line = 0;
+
+  s->fp = NULL;
+
+#ifdef DEBUG_VERSION
+  print_stack(s);
+  printf("- mod state init done\n");
+#endif
+}
+
+void init_mod_state_globals(struct State *s) {
+  s_pushn_nil(s->bf->global_area_size);
+  s->bf->global_ptr = (void*)__gc_stack_top;
+
+#ifdef DEBUG_VERSION
+  print_stack(s);
+  printf("- state globals init done\n");
 #endif
 }
 

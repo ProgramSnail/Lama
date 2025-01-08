@@ -2,4 +2,14 @@
 
 #include "utils.h"
 
-void run(Bytefile *bf, int argc, char **argv);
+// void run(Bytefile *bf, int argc, char **argv);
+
+void run_init(size_t *stack);
+
+void run_mod_rec(uint mod_id, int argc, char **argv);
+
+void run_prepare_exec(int argc, char **argv);
+
+void run_mod(uint mod_id, int argc, char **argv);
+
+void run_cleanup();

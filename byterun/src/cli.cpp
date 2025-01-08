@@ -6,7 +6,9 @@
 extern "C" {
 #include "../../runtime/runtime.h"
 #include "interpreter.h"
+#include "module_manager.h"
 #include "parser.h"
+#include "types.h"
 #include "utils.h"
 }
 
@@ -40,9 +42,6 @@ int main(int argc, char **argv) {
   }
 
   Bytefile *f = read_file(argv[2]);
-#ifdef DEBUG_VERSION
-  dump_file(stdout, f);
-#endif
   if (do_print) {
     print_file(*f, std::cout);
   }
@@ -50,12 +49,19 @@ int main(int argc, char **argv) {
     analyze(f);
   }
   if (do_interpretation) {
-    run(f, argc - 2, argv + 2);
+    // TODO FIXME: add all loaded modules verification
+    size_t stack[STACK_SIZE];
+    run_init(stack);
+
+    uint main_mod_id = mod_add(f);
+
+    run_mod_rec(main_mod_id, argc - 1, argv + 1);
   }
 
+  // TODO: remove, before modules
   // // NOTE: not used for now
   // // free(f->global_ptr);
-  free(f);
+  // free(f);
 
   return 0;
 }

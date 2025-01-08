@@ -172,15 +172,19 @@ module ByteCode = struct
     let code = Buffer.create 256 in
     let st = StringTab.create () in
     let lmap = Stdlib.ref M.empty in
+    let externs = Stdlib.ref S.empty in
     let pubs = Stdlib.ref S.empty in
     let imports = Stdlib.ref S.empty in
     let globals = Stdlib.ref M.empty in
     let glob_count = Stdlib.ref 0 in
     let fixups = Stdlib.ref [] in
+    let func_fixups = Stdlib.ref [] in
     let add_lab l = lmap := M.add l (Buffer.length code) !lmap in
+    let add_extern l = externs := S.add l !externs in
     let add_public l = pubs := S.add l !pubs in
     let add_import l = imports := S.add l !imports in
     let add_fixup l = fixups := (Buffer.length code, l) :: !fixups in
+    let add_func_fixup c l = func_fixups := (c, Buffer.length code, l) :: !func_fixups in
     let add_bytes = List.iter (fun x -> Buffer.add_char code @@ Char.chr x) in
     let add_ints =
       List.iter (fun x -> Buffer.add_int32_ne code @@ Int32.of_int x)
@@ -302,9 +306,10 @@ module ByteCode = struct
           add_ints [ n ]
       (* 0x56 l:32 n:32       *)
       | CALL (fn, n, _) ->
-          add_bytes [ (5 * 16) + 6 ];
-          add_fixup fn;
-          add_ints [ 0; n ]
+          (add_bytes [ (5 * 16) + 6 ];
+          (* TODO: 1 -> sizeof byte ?? *)
+          add_func_fixup (Buffer.length code - 1) fn; 
+          add_ints [ 0; n ])
       (* 0x57 s:32 n:32       *)
       | TAG (s, n) ->
           add_bytes [ (5 * 16) + 7 ];
@@ -324,9 +329,11 @@ module ByteCode = struct
           add_ints [ n ]
       (* 0x6p                 *)
       | PATT p -> add_bytes [ (6 * 16) + enum patt p ]
-      | EXTERN _ -> ()
+      | EXTERN s -> add_extern s
+      (* TODO: put externs in string table (?), or check that all external funtions are externs *)
       | PUBLIC s -> add_public s
       | IMPORT s -> add_import s
+      (* TODO: add imports table before publics *)
       | _ ->
           failwith
             (Printf.sprintf "Unexpected pattern: %s: %d" __FILE__ __LINE__)
@@ -334,6 +341,15 @@ module ByteCode = struct
     List.iter insn_code insns;
     add_bytes [ 255 ];
     let code = Buffer.to_bytes code in
+    List.iter
+      (fun (cmd_ofs, addr_ofs, l) ->
+        Bytes.set_int32_ne code addr_ofs
+          (Int32.of_int
+          @@
+          try M.find l !lmap
+          with Not_found ->
+            Bytes.set_int8 code cmd_ofs ((5 * 16) + 11); StringTab.add st l))
+      !func_fixups;
     List.iter
       (fun (ofs, l) ->
         Bytes.set_int32_ne code ofs
@@ -343,6 +359,11 @@ module ByteCode = struct
           with Not_found ->
             failwith (Printf.sprintf "ERROR: undefined label '%s'" l)))
       !fixups;
+    let imports = (* TODO: check *)
+      List.map (fun l ->
+          (Int32.of_int @@ StringTab.add st l))
+      @@ S.elements !imports
+    in
     let pubs =
       List.map (fun l ->
           ( Int32.of_int @@ StringTab.add st l,
@@ -357,7 +378,12 @@ module ByteCode = struct
     let file = Buffer.create 1024 in
     Buffer.add_int32_ne file (Int32.of_int @@ Bytes.length st);
     Buffer.add_int32_ne file (Int32.of_int @@ !glob_count);
+    Buffer.add_int32_ne file (Int32.of_int @@ List.length imports);
     Buffer.add_int32_ne file (Int32.of_int @@ List.length pubs);
+    List.iter
+      (fun (n) ->
+        Buffer.add_int32_ne file n)
+      imports;
     List.iter
       (fun (n, o) ->
         Buffer.add_int32_ne file n;

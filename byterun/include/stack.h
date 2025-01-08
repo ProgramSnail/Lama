@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../runtime/gc.h"
+#include "module_manager.h"
 #include "runtime_externs.h"
 #include "types.h"
 #include "utils.h"
@@ -148,14 +149,14 @@ static inline void s_rotate_n(size_t n) {
 
 // ------ functions ------
 
-// |> param_0 ... param_n | frame[ ret rp prev_fp &params &locals &end
+// |> param_0 ... param_n | frame[ ret rp prev_fp ... &params &locals &end
 // ]
 // |> local_0 ... local_m |> | ...
 //
 // where |> defines corresponding frame pointer, | is stack pointer
 // location before / after new frame added
-static inline void s_enter_f(char *rp, bool is_closure_call, auint args_sz,
-                             auint locals_sz) {
+static inline void s_enter_f(char *rp, aint ret_module_id, bool is_closure_call,
+                             auint args_sz, auint locals_sz) {
 #ifdef DEBUG_VERSION
   printf("-> %i args sz\n", args_sz);
   printf("-> %i locals sz\n", locals_sz);
@@ -186,6 +187,7 @@ static inline void s_enter_f(char *rp, bool is_closure_call, auint args_sz,
       .ret = NULL, // field in frame itself
       .rp = rp,
       .prev_fp = (void **)s.fp,
+      .ret_module_box = BOX(ret_module_id),
       .args_sz_box = BOX(args_sz),
       .locals_sz_box = BOX(locals_sz),
   };
@@ -226,6 +228,10 @@ static inline void s_exit_f() {
   }
 
   s.ip = frame.rp;
+
+  s.current_module_id = UNBOX(frame.ret_module_box);
+  s.bf = mod_get(s.current_module_id);
+  // TODO: return to ret_module
 }
 
 static inline void print_stack() {

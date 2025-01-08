@@ -315,6 +315,9 @@ void analyze(Bytefile *bf) {
       break;
     case Cmd::LINE:
       break;
+    case Cmd::CALLF: // FIXME TODO
+      ip_failure(saved_current_ip, bf, "CALLF analysis is not implemented yet");
+      break;
     case Cmd::PATT:
       --current_stack_depth;
       if (l == CMD_PATT_STR) {

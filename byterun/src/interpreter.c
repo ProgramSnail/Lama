@@ -3,6 +3,7 @@
 #include "../../runtime/gc.h"
 #include "../../runtime/runtime.h"
 
+#include "module_manager.h"
 #include "runtime_externs.h"
 #include "stack.h"
 #include "types.h"
@@ -53,17 +54,11 @@ static inline const char *ip_read_string(char **ip) {
 
 const size_t BUFFER_SIZE = 1000;
 
-void run(Bytefile *bf, int argc, char **argv) {
-  size_t stack[STACK_SIZE];
-  void *buffer[BUFFER_SIZE];
-  construct_state(bf, &s, (void **)stack);
+void run_init(size_t *stack) {
+  init_state(&s, (void**)stack);
+}
 
-#ifdef DEBUG_VERSION
-  printf("--- interpreter run ---\n");
-#endif
-
-  // argc, argv
-  {
+void run_prepare_exec(int argc, char **argv) {
     s_push_i(BOX(argc));
     for (size_t i = 0; i < argc; ++i) {
       s_push(Bstring((aint *)&argv[argc - i - 1]));
@@ -72,21 +67,50 @@ void run(Bytefile *bf, int argc, char **argv) {
     void *argv_elem = s_pop();
     s_popn(argc);
     s_push(argv_elem);
+}
+
+// TODO: use unsafe, move checks to verifier (?)
+void run_mod_rec(uint mod_id, int argc, char **argv) {
+  Bytefile* mod = mod_get(mod_id); // TODO: pass as param ??
+  for (size_t i = 0; i < mod->imports_number; ++i) {
+    if (find_mod_loaded(get_import_safe(mod, i)) < 0 && strcmp(get_import_safe(mod, i), "Std") != 0) { // not loaded
+      int32_t import_mod = mod_load(get_import_safe(mod, i));
+      if (import_mod < 0) {
+        failure("module %s not found\n", get_import_safe(mod, i));
+      }
+      run_mod_rec(mod_id, argc, argv);
+    }
   }
 
+  init_mod_state(mod_id, &s);
+  init_mod_state_globals(&s);
+
+  run_prepare_exec(argc, argv); // args for module main
+  run_mod(mod_id, argc, argv);
+}
+
+void run_mod(uint mod_id, int argc, char **argv) {
 #ifdef DEBUG_VERSION
-  printf("- loop start\n");
+  printf("--- module init state ---\n");
+#endif
+
+  init_mod_state(mod_id, &s);
+
+  void *buffer[BUFFER_SIZE];
+
+#ifdef DEBUG_VERSION
+  printf("--- module run begin ---\n");
 #endif
 
   do {
     bool call_happened = false;
 
 #ifndef WITH_CHECK
-    if (s.ip >= bf->code_ptr + bf->code_size) {
+    if (s.ip >= s.bf->code_ptr + s.bf->code_size) {
       s_failure(&s, "instruction pointer is out of range (>= size)");
     }
 
-    if (s.ip < bf->code_ptr) {
+    if (s.ip < s.bf->code_ptr) {
       s_failure(&s, "instruction pointer is out of range (< 0)");
     }
 #endif
@@ -94,9 +118,9 @@ void run(Bytefile *bf, int argc, char **argv) {
     s.instr_ip = s.ip;
     uint8_t x = ip_read_byte(&s.ip), h = (x & 0xF0) >> 4, l = x & 0x0F;
 
-// #ifdef DEBUG_VERSION
-    printf("0x%.8x: %s\n", s.ip - bf->code_ptr - 1, read_cmd(s.ip - 1, s.bf));
-// #endif
+#ifdef DEBUG_VERSION
+    printf("0x%.8x: %s\n", s.ip - s.bf->code_ptr - 1, read_cmd(s.ip - 1, s.bf));
+#endif
 
     switch (h) {
     case CMD_EXIT:
@@ -193,11 +217,11 @@ void run(Bytefile *bf, int argc, char **argv) {
         uint jmp_p = ip_read_int(&s.ip);
 
 #ifndef WITH_CHECK
-        if (jmp_p >= bf->code_size) {
+        if (jmp_p >= s.bf->code_size) {
           s_failure(&s, "jump out of file");
         }
 #endif
-        s.ip = bf->code_ptr + jmp_p;
+        s.ip = s.bf->code_ptr + jmp_p;
         break;
       }
 
@@ -270,12 +294,12 @@ void run(Bytefile *bf, int argc, char **argv) {
         uint jmp_p = ip_read_int(&s.ip);
 
 #ifndef WITH_CHECK
-        if (jmp_p >= bf->code_size) {
+        if (jmp_p >= s.bf->code_size) {
           s_failure(&s, "jump out of file");
         }
 #endif
         if (UNBOX(s_pop_i()) == 0) {
-          s.ip = bf->code_ptr + jmp_p;
+          s.ip = s.bf->code_ptr + jmp_p;
         }
         break;
       }
@@ -284,12 +308,12 @@ void run(Bytefile *bf, int argc, char **argv) {
         uint jmp_p = ip_read_int(&s.ip);
 
 #ifndef WITH_CHECK
-        if (jmp_p >= bf->code_size) {
+        if (jmp_p >= s.bf->code_size) {
           s_failure(&s, "jump out of file");
         }
 #endif
         if (UNBOX(s_pop_i()) != 0) {
-          s.ip = bf->code_ptr + jmp_p;
+          s.ip = s.bf->code_ptr + jmp_p;
         }
         break;
       }
@@ -307,8 +331,8 @@ void run(Bytefile *bf, int argc, char **argv) {
           s_failure(&s, "begin should only be called after call");
         }
 #endif
-        s_enter_f(s.call_ip /*ip from call*/, s.is_closure_call, args_sz,
-                  locals_sz);
+        s_enter_f(s.call_ip /*ip from call*/, s.call_module_id,
+                  s.is_closure_call, args_sz, locals_sz);
 #ifndef WITH_CHECK
         if ((void **)__gc_stack_top + (aint)max_additional_stack_sz - 1 <= s.stack) {
           s_failure(&s, "stack owerflow");
@@ -331,8 +355,8 @@ void run(Bytefile *bf, int argc, char **argv) {
           s_failure(&s, "begin should only be called after call");
         }
 #endif
-        s_enter_f(s.call_ip /*ip from call*/, s.is_closure_call, args_sz,
-                  locals_sz);
+        s_enter_f(s.call_ip /*ip from call*/, s.call_module_id,
+                  s.is_closure_call, args_sz, locals_sz);
 #ifdef WITH_CHECK
         if ((void **)__gc_stack_top + (aint)max_additional_stack_sz - 1 <= s.stack) {
           s_failure(&s, "stack owerflow");
@@ -354,11 +378,11 @@ void run(Bytefile *bf, int argc, char **argv) {
           s_push(*var_ptr);
         }
 #ifndef WITH_CHECK
-        if (call_offset >= bf->code_size) {
+        if (call_offset >= s.bf->code_size) {
           s_failure(&s, "jump out of file");
         }
 #endif
-        s_push(bf->code_ptr + call_offset);
+        s_push(s.bf->code_ptr + call_offset);
 
         void *closure = Bclosure((aint *)__gc_stack_top, BOX(args_count));
         // printf("args is %li, count is %li\n", args_count, get_len(TO_DATA(closure)));
@@ -374,6 +398,7 @@ void run(Bytefile *bf, int argc, char **argv) {
         call_happened = true;
         s.is_closure_call = true;
         s.call_ip = s.ip;
+        s.call_module_id = s.current_module_id;
 
         s.ip = (char*)Belem(*s_nth(args_count), BOX(0)); // use offset instead ??
         break;
@@ -386,13 +411,14 @@ void run(Bytefile *bf, int argc, char **argv) {
         call_happened = true;
         s.is_closure_call = false;
         s.call_ip = s.ip;
+        s.call_module_id = s.current_module_id;
 
 #ifndef WITH_CHECK
-        if (call_p >= bf->code_size) {
+        if (call_p >= s.bf->code_size) {
           s_failure(&s, "jump out of file");
         }
 #endif
-        s.ip = bf->code_ptr + call_p;
+        s.ip = s.bf->code_ptr + call_p;
         break;
       }
 
@@ -424,6 +450,31 @@ void run(Bytefile *bf, int argc, char **argv) {
         s.current_line = ip_read_int(&s.ip);
         // maybe some metainfo should be collected
         break;
+
+      case CMD_CTRL_CALLF: { // CALLF %s %d // call external function
+        const char *call_func_name = ip_read_string(&s.ip);
+        ip_read_int(&s.ip); // args count
+
+        // TODO: jump to other module, save ret module
+        struct ModSearchResult func = mod_search_pub_symbol(call_func_name);
+        if (func.mod_file == NULL) {
+          s_failure(&s, "external function not found");
+        }
+
+        call_happened = true;
+        s.is_closure_call = false;
+        s.call_ip = s.ip;
+        s.call_module_id = s.current_module_id;
+
+        s.current_module_id = func.mod_id;
+        s.bf = func.mod_file;
+
+        if (func.symbol_offset >= s.bf->code_size) {
+          s_failure(&s, "jump out of file");
+        }
+        s.ip = s.bf->code_ptr + func.symbol_offset;
+        break;
+      }
 
       default:
         s_failure(&s, "invalid opcode"); // %d-%d\n", h, l);
@@ -493,7 +544,7 @@ void run(Bytefile *bf, int argc, char **argv) {
         // s_rotate_n(elem_count);
         void *array =
             Barray((aint *)opr_buffer,
-                   BOX(elem_count)); // NOTE: not shure if elems should be
+                   BOX(elem_count)); // NOTE: not sure if elems should be
                                      // added
 
         // void *array = Barray((aint *)s_peek(), BOX(elem_count));
@@ -513,6 +564,7 @@ void run(Bytefile *bf, int argc, char **argv) {
     if (!call_happened) {
       s.is_closure_call = false;
       s.call_ip = NULL;
+      s.call_module_id = 0;
     }
 
     if (s.fp == NULL) {
@@ -524,7 +576,8 @@ void run(Bytefile *bf, int argc, char **argv) {
   } while (1);
 stop:;
 #ifdef DEBUG_VERSION
-  printf("--- run end ---\n");
+  printf("--- module run end ---\n");
 #endif
-  cleanup_state(&s);
 }
+
+void run_cleanup() { cleanup_state(&s); }

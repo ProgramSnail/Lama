@@ -35,6 +35,7 @@ enum class Cmd : int8_t {
   ARRAY,
   FAIL,
   LINE,
+  CALLF,
   PATT,
   Lread,
   Lwrite,

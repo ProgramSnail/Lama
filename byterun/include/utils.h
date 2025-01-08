@@ -10,13 +10,15 @@
 /* The unpacked representation of bytecode file */
 typedef struct {
   char *string_ptr;      /* A pointer to the beginning of the string table */
+  int *imports_ptr;      /* A pointer to the beginning of imports table    */
   int *public_ptr;       /* A pointer to the beginning of publics table    */
   char *code_ptr;        /* A pointer to the bytecode itself               */
   int *global_ptr;       /* A pointer to the global area                   */
   int code_size;         /* The size (in bytes) of code                    */
   uint stringtab_size;   /* The size (in bytes) of the string table        */
   uint global_area_size; /* The size (in words) of global area             */
-  uint public_symbols_number; /* The number of public symbols */
+  uint imports_number;   /* The number of imports                          */
+  uint public_symbols_number; /* The number of public symbols              */
   char buffer[0];
 } Bytefile;
 
@@ -33,6 +35,14 @@ static inline void exec_failure(const char *cmd, int line, aint offset,
 /* Gets a string from a string table by an index */
 static inline const char *get_string_unsafe(const Bytefile *bf, size_t pos) {
   return &bf->string_ptr[pos];
+}
+
+/* Gets import */
+static inline const char *get_import_unsafe(const Bytefile *f, size_t i) {
+  if (i >= f->imports_number) {
+    failure("import pos is out of range: %zu >= %i\n", i, f->imports_number);
+  }
+  return get_string_unsafe(f, f->imports_ptr[i]);
 }
 
 /* Gets a name offset for a public symbol */
@@ -78,6 +88,14 @@ static inline const char *get_string_safe(const Bytefile *f, size_t pos) {
     failure("string pos is out of range: %zu >= %i\n", pos, f->stringtab_size);
   }
   return get_string_unsafe(f, pos);
+}
+
+/* Gets import */
+static inline const char *get_import_safe(const Bytefile *f, size_t i) {
+  if (i >= f->imports_number) {
+    failure("import pos is out of range: %zu >= %i\n", i, f->imports_number);
+  }
+  return get_string_safe(f, f->imports_ptr[i]);
 }
 
 /* Gets a name offset for a public symbol */
