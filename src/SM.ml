@@ -307,7 +307,7 @@ module ByteCode = struct
       (* 0x56 l:32 n:32       *)
       | CALL (fn, n, _) ->
           (add_bytes [ (5 * 16) + 6 ];
-          (* TODO: 1 -> sizeof byte ?? *)
+          (* 1 = sizeof byte *)
           add_func_fixup (Buffer.length code - 1) fn; 
           add_ints [ 0; n ])
       (* 0x57 s:32 n:32       *)
@@ -333,7 +333,6 @@ module ByteCode = struct
       (* TODO: put externs in string table (?), or check that all external funtions are externs *)
       | PUBLIC s -> add_public s
       | IMPORT s -> add_import s
-      (* TODO: add imports table before publics *)
       | _ ->
           failwith
             (Printf.sprintf "Unexpected pattern: %s: %d" __FILE__ __LINE__)
@@ -359,7 +358,7 @@ module ByteCode = struct
           with Not_found ->
             failwith (Printf.sprintf "ERROR: undefined label '%s'" l)))
       !fixups;
-    let imports = (* TODO: check *)
+    let imports =
       List.map (fun l ->
           (Int32.of_int @@ StringTab.add st l))
       @@ S.elements !imports

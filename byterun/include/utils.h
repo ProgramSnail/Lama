@@ -22,10 +22,10 @@ typedef struct {
   char buffer[0];
 } Bytefile;
 
-static inline void exec_failure(const char *cmd, int line, aint offset,
-                                const char *msg) {
-  failure("*** RUNTIME ERROR: %i(0x%.8x):%s error: %s\n", line, offset, cmd,
-          msg);
+static inline void exec_failure(const char *cmd, const char *module_name,
+                                int line, aint offset, const char *msg) {
+  failure("*** RUNTIME ERROR: %s:%i(0x%.8x):%s error: %s\n", module_name, line,
+          offset, cmd, msg);
 }
 
 // --- unsafe versions

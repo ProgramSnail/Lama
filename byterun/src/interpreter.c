@@ -60,25 +60,35 @@ void run_init(size_t *stack) {
 
 void run_prepare_exec(int argc, char **argv) {
     s_push_i(BOX(argc));
+#ifdef DEBUG_VERSION
+    printf("- argc: %i\n", argc);
+#endif
     for (size_t i = 0; i < argc; ++i) {
+#ifdef DEBUG_VERSION
+      printf("- arg: %s\n", argv[argc - i - 1]);
+#endif
       s_push(Bstring((aint *)&argv[argc - i - 1]));
     }
     s_push(Barray((aint *)s_peek(), argc));
     void *argv_elem = s_pop();
     s_popn(argc);
     s_push(argv_elem);
+
+#ifdef DEBUG_VERSION
+  print_stack(s);
+  printf("- state init done\n");
+#endif
 }
 
-// TODO: use unsafe, move checks to verifier (?)
-void run_mod_rec(uint mod_id, int argc, char **argv) {
-  Bytefile* mod = mod_get(mod_id); // TODO: pass as param ??
+void run_mod_rec(uint mod_id, int argc, char **argv, bool do_verification) {
+  Bytefile* mod = mod_get(mod_id);
   for (size_t i = 0; i < mod->imports_number; ++i) {
     if (find_mod_loaded(get_import_safe(mod, i)) < 0 && strcmp(get_import_safe(mod, i), "Std") != 0) { // not loaded
-      int32_t import_mod = mod_load(get_import_safe(mod, i));
+      int32_t import_mod = mod_load(get_import_safe(mod, i), do_verification);
       if (import_mod < 0) {
         failure("module %s not found\n", get_import_safe(mod, i));
       }
-      run_mod_rec(mod_id, argc, argv);
+      run_mod_rec(mod_id, argc, argv, do_verification);
     }
   }
 
@@ -455,7 +465,6 @@ void run_mod(uint mod_id, int argc, char **argv) {
         const char *call_func_name = ip_read_string(&s.ip);
         ip_read_int(&s.ip); // args count
 
-        // TODO: jump to other module, save ret module
         struct ModSearchResult func = mod_search_pub_symbol(call_func_name);
         if (func.mod_file == NULL) {
           s_failure(&s, "external function not found");

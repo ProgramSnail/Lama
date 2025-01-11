@@ -2,6 +2,7 @@
 
 #include "../../runtime/runtime.h"
 #include "../../runtime/runtime_common.h"
+#include "module_manager.h"
 #include "parser.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -74,18 +75,20 @@ void init_mod_state(uint mod_id, struct State *s);
 void init_mod_state_globals(struct State *s);
 void cleanup_state(struct State *state);
 
-// TODO: print current mod id
 static inline void s_failure(struct State *s, const char *msg) {
-  exec_failure(read_cmd(s->instr_ip, s->bf), s->current_line,
-               s->instr_ip - s->bf->code_ptr, msg);
+  exec_failure(read_cmd(s->instr_ip, s->bf), mod_get_name(s->current_module_id),
+               s->current_line, s->instr_ip - s->bf->code_ptr, msg);
 }
 
-static inline void ip_failure(char *ip, Bytefile *bf, const char *msg) {
-  exec_failure(read_cmd(ip, bf), 0, ip - bf->code_ptr, msg);
+static inline void ip_failure(char *ip, uint32_t mod_id, const char *msg) {
+  Bytefile *bf = mod_get(mod_id);
+  exec_failure(read_cmd(ip, bf), mod_get_name(mod_id), 0, ip - bf->code_ptr,
+               msg);
 }
 
-static inline void ip_safe_failure(char *ip, Bytefile *bf, const char *msg) {
-  exec_failure("_UNDEF_", 0, ip - bf->code_ptr, msg);
+static inline void ip_safe_failure(char *ip, uint32_t mod_id, const char *msg) {
+  Bytefile *bf = mod_get(mod_id);
+  exec_failure("_UNDEF_", mod_get_name(mod_id), 0, ip - bf->code_ptr, msg);
 }
 
 // ------ VarCategory ------

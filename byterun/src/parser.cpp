@@ -77,8 +77,7 @@ Bytefile *read_file(const char *fname) {
   if (file->buffer + strings_buffer_offset >= file_end) {
     failure("public symbols are out of the file size\n");
   }
-  file->string_ptr =
-      &file->buffer[strings_buffer_offset]; // TODO: check that should be there
+  file->string_ptr = file->buffer + strings_buffer_offset;
   if (file->string_ptr + file->stringtab_size > file_end) {
     failure("strings table is out of the file size\n");
   }
@@ -86,6 +85,8 @@ Bytefile *read_file(const char *fname) {
   //     file->string_ptr[file->stringtab_size - 1] != 0) {
   //   failure("strings table is not zero-ended\n");
   // }
+  file->code_size = size - strings_buffer_offset - file->stringtab_size;
+
   if (file->code_size < 0 || public_symbols_size < 0 ||
       file->stringtab_size < 0) {
     failure("file zones sizes should be >= 0\n");
@@ -93,11 +94,9 @@ Bytefile *read_file(const char *fname) {
 
   file->imports_ptr = (int *)file->buffer;
   file->public_ptr = (int *)(file->buffer + imports_size);
-  // is allocated on module run on stack
-  file->global_ptr = NULL;
+  file->global_ptr = NULL; // is allocated on module run on stack
+  file->code_ptr = file->string_ptr + file->stringtab_size;
   // file->global_ptr  = (int*) calloc (file->global_area_size, sizeof (int));
-
-  file->code_size = size - strings_buffer_offset - file->stringtab_size;
 
   return file;
 }
@@ -606,18 +605,17 @@ void print_file_info(const Bytefile &bf, std::ostream &out) {
   out << "Global area size        : " << bf.global_area_size << '\n';
   out << "Number of imports       : " << bf.imports_number << '\n';
   out << "Number of public symbols: " << bf.public_symbols_number << '\n';
-  out << "Imports                 :\n";
 
+  out << "Imports                 :\n";
   for (size_t i = 0; i < bf.imports_number; i++) {
-    out << "   %s\n" << get_import_safe(&bf, i);
+    out << "   " << get_import_safe(&bf, i) << '\n';
   }
 
   out << "Public symbols          :\n";
-
   for (size_t i = 0; i < bf.public_symbols_number; i++) {
     out << "   " << std::setfill('0') << std::setw(8) << std::hex
         << get_public_offset_safe(&bf, i) << ": " << std::dec
-        << get_public_name_safe(&bf, i);
+        << get_public_name_safe(&bf, i) << '\n';
   }
 }
 
@@ -628,7 +626,7 @@ void print_file_code(const Bytefile &bf, std::ostream &out) {
     out << "   " << std::setfill('0') << std::setw(8) << std::hex
         << ip - bf.code_ptr << ": " << std::dec;
     const auto [cmd, l] = parse_command(&ip, &bf, out);
-    out << '\n';
+    out << std::endl;
 
     if (cmd == Cmd::EXIT) {
       break;
@@ -640,8 +638,8 @@ void print_file(const Bytefile &bf, std::ostream &out) {
   print_file_info(bf, out);
 
   out << "Code:\n";
-
   print_file_code(bf, out);
+  out << "code end\n";
 }
 
 extern "C" {

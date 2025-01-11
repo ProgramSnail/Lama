@@ -3,6 +3,7 @@ extern "C" {
 #include "utils.h"
 }
 
+#include "analyzer.hpp"
 #include "parser.hpp"
 
 #include <filesystem>
@@ -16,24 +17,29 @@ struct ModSymbolPos {
   size_t offset;
 };
 
+struct Module {
+  std::string name;
+  Bytefile *bf;
+};
+
 struct ModuleManager {
   std::unordered_map<std::string, uint32_t> loaded_modules;
   std::unordered_map<std::string, ModSymbolPos> public_symbols_mods;
-  std::vector<Bytefile *> modules;
+  std::vector<Module> modules;
   std::vector<std::filesystem::path> search_paths;
 };
 
 static ModuleManager manager;
 
-uint32_t mod_add_impl(Bytefile *module,
+uint32_t mod_add_impl(Bytefile *bf, bool do_verification,
                       std::optional<const char *> name = std::nullopt) {
   uint32_t id = manager.modules.size();
-  manager.modules.push_back(module);
-  for (size_t i = 0; i < module->public_symbols_number; ++i) {
+  manager.modules.push_back({.name = name ? *name : "", .bf = bf});
+  for (size_t i = 0; i < bf->public_symbols_number; ++i) {
     if (!manager.public_symbols_mods
              .insert({
-                 get_public_name_safe(module, i),
-                 {.mod_id = id, .offset = get_public_offset_safe(module, i)},
+                 get_public_name_safe(bf, i),
+                 {.mod_id = id, .offset = get_public_offset_safe(bf, i)},
              })
              .second) {
       failure("public symbol loaded more then once\n");
@@ -42,10 +48,14 @@ uint32_t mod_add_impl(Bytefile *module,
   if (name) {
     manager.loaded_modules.insert({*name, id});
   }
+  if (do_verification) {
+    analyze(id);
+  }
   return id;
 }
 
-uint32_t path_mod_load(const char *name, std::filesystem::path &&path) {
+uint32_t path_mod_load(const char *name, std::filesystem::path &&path,
+                       bool do_verification) {
   Bytefile *module = read_file(path.c_str());
   return mod_add_impl(module, name);
 }
@@ -55,11 +65,18 @@ void mod_add_search_path(const char *path) {
   manager.search_paths.emplace_back(path);
 }
 
+const char *mod_get_name(uint32_t id) {
+  if (id > manager.modules.size()) {
+    failure("module id is out of range\n");
+  }
+  return manager.modules[id].name.c_str();
+}
+
 Bytefile *mod_get(uint32_t id) {
   if (id > manager.modules.size()) {
     failure("module id is out of range\n");
   }
-  return manager.modules[id];
+  return manager.modules[id].bf;
 }
 
 int32_t find_mod_loaded(const char *name) {
@@ -73,7 +90,7 @@ int32_t find_mod_loaded(const char *name) {
   return -1;
 }
 
-int32_t mod_load(const char *name) {
+int32_t mod_load(const char *name, bool do_verification) {
   std::string full_name = std::string{name} + ".bc";
 
   auto it = manager.loaded_modules.find(name);
@@ -84,19 +101,21 @@ int32_t mod_load(const char *name) {
   }
 
   if (std::filesystem::exists(full_name)) {
-    return path_mod_load(name, full_name);
+    return path_mod_load(name, full_name, do_verification);
   }
   for (const auto &dir_path : manager.search_paths) {
     auto path = dir_path / full_name;
     if (std::filesystem::exists(path)) {
-      return path_mod_load(name, std::move(path));
+      return path_mod_load(name, std::move(path), do_verification);
     }
   }
 
   return -1;
 }
 
-uint32_t mod_add(Bytefile *module) { return mod_add_impl(module); }
+uint32_t mod_add(Bytefile *module, bool do_verification) {
+  return mod_add_impl(module, do_verification);
+}
 
 ModSearchResult mod_search_pub_symbol(const char *name) {
   auto it = manager.public_symbols_mods.find(name);

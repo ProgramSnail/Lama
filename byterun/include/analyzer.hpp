@@ -4,4 +4,4 @@ extern "C" {
 #include "utils.h"
 }
 
-void analyze(Bytefile *bf);
+void analyze(uint32_t mod_id);

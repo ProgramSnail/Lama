@@ -162,7 +162,6 @@ static inline void s_enter_f(char *rp, aint ret_module_id, bool is_closure_call,
   printf("-> %i locals sz\n", locals_sz);
 #endif
 
-  // TODO: move checks to BEGIN/CBEGIN
   // check that params count is valid
   if ((void **)__gc_stack_top + (aint)args_sz - (is_closure_call ? 0 : 1) >=
       s_top()) {
@@ -231,12 +230,13 @@ static inline void s_exit_f() {
 
   s.current_module_id = UNBOX(frame.ret_module_box);
   s.bf = mod_get(s.current_module_id);
-  // TODO: return to ret_module
 }
 
-static inline void print_stack() {
-  printf("stack (%i) is\n[", s.stack + STACK_SIZE - (void **)__gc_stack_top);
-  for (void **x = s.stack + STACK_SIZE - 1; x >= (void **)__gc_stack_top; --x) {
+static inline void print_stack(struct State *state) {
+  printf("stack (%li) is\n[",
+         state->stack + STACK_SIZE - (void **)__gc_stack_top);
+  for (void **x = state->stack + STACK_SIZE - 1; x >= (void **)__gc_stack_top;
+       --x) {
     printf("%li ", (long)UNBOX(*x));
   }
   printf("]\n");

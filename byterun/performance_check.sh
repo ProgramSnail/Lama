@@ -2,19 +2,26 @@
 
 dune build > /dev/null
 
-echo "Interpreter:"
-time echo '0' | lamac -i ../performance/Sort.lama > /dev/null
+compiler=../_build/default/src/Driver.exe
+
+echo "Used compiler path:"
+echo $compiler
+
+# echo "Interpreter:"
+# time echo '0' | $compiler -i ../performance/Sort.lama
 
 echo "Stack Machine:"
-time echo '0' | lamac -s ../performance/Sort.lama > /dev/null
+time echo '0' | $compiler -s ../performance/Sort.lama > /dev/null
 
-
-lamac -b  ../performance/Sort.lama > /dev/null
+$compiler -b  ../performance/Sort.lama
 
 # ./byterun.exe -p Sort.bc
 
-echo "Old Byterun:"
-time ./old_byterun.exe -i Sort.bc > /dev/null
+# echo "Old Byterun:"
+# time ./old_byterun.exe -i Sort.bc > /dev/null
+
+echo "Code:"
+time ./byterun.exe -p Sort.bc > /dev/null
 
 echo "Byterun:"
 time ./byterun.exe -vi Sort.bc > /dev/null
@@ -27,3 +34,4 @@ time ./byterun.exe -i Sort.bc > /dev/null
 
 rm Sort.*
 rm *.o
+rm *.a

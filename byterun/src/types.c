@@ -12,13 +12,15 @@ extern size_t __gc_stack_top, __gc_stack_bottom;
 // --- State ---
 
 void init_state(struct State* s, void** stack) {
+  __init();
+
   s->stack = stack;
   s->bf = NULL;
   s->is_closure_call = false;
   s->current_module_id = 0;
   s->call_module_id = 0;
-  s->ip = s->bf->code_ptr;
-  s->instr_ip = s->bf->code_ptr;
+  s->ip = NULL; //s->bf->code_ptr;
+  s->instr_ip = NULL; //s->bf->code_ptr;
   s->call_ip = NULL;
   s->current_line = 0;
 
@@ -51,6 +53,9 @@ void init_mod_state(uint mod_id, struct State* s) {
   s->current_line = 0;
 
   s->fp = NULL;
+
+  s->ip = s->bf->code_ptr;
+  s->instr_ip = s->bf->code_ptr;
 
 #ifdef DEBUG_VERSION
   print_stack(s);

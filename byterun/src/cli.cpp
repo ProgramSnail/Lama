@@ -41,27 +41,40 @@ int main(int argc, char **argv) {
     failure("no file name provided");
   }
 
+#ifdef DEBUG_VERSION
+  std::cerr << "- read code file" << std::endl;
+#endif
+
   Bytefile *f = read_file(argv[2]);
   if (do_print) {
+#ifdef DEBUG_VERSION
+    std::cerr << "- print code file" << std::endl;
+#endif
+
     print_file(*f, std::cout);
   }
-  if (do_verification) {
-    analyze(f);
-  }
-  if (do_interpretation) {
-    // TODO FIXME: add all loaded modules verification
+  if (do_verification || do_interpretation) {
+#ifdef DEBUG_VERSION
+    std::cerr << "- init stack" << std::endl;
+#endif
+
     size_t stack[STACK_SIZE];
     run_init(stack);
 
-    uint main_mod_id = mod_add(f);
+#ifdef DEBUG_VERSION
+    std::cerr << "- add main module" << std::endl;
+#endif
 
-    run_mod_rec(main_mod_id, argc - 1, argv + 1);
+    uint main_mod_id = mod_add(f, do_verification);
+
+    if (do_interpretation) {
+#ifdef DEBUG_VERSION
+      std::cerr << "- start interpretation" << std::endl;
+#endif
+
+      run_mod_rec(main_mod_id, argc - 2, argv + 2, do_verification);
+    }
   }
-
-  // TODO: remove, before modules
-  // // NOTE: not used for now
-  // // free(f->global_ptr);
-  // free(f);
 
   return 0;
 }
