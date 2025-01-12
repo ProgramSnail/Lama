@@ -1,3 +1,4 @@
+#include <iostream>
 extern "C" {
 #include "module_manager.h"
 #include "utils.h"
@@ -33,16 +34,23 @@ static ModuleManager manager;
 
 uint32_t mod_add_impl(Bytefile *bf, bool do_verification,
                       std::optional<const char *> name = std::nullopt) {
+#ifdef DEBUG_VERSION
+  std::cerr << "- add module (impl) '" << std::string{name ? *name : ""}
+            << "'\n";
+#endif
   uint32_t id = manager.modules.size();
   manager.modules.push_back({.name = name ? *name : "", .bf = bf});
   for (size_t i = 0; i < bf->public_symbols_number; ++i) {
-    if (!manager.public_symbols_mods
-             .insert({
-                 get_public_name_safe(bf, i),
-                 {.mod_id = id, .offset = get_public_offset_safe(bf, i)},
-             })
-             .second) {
-      failure("public symbol loaded more then once\n");
+    const char *public_name = get_public_name_safe(bf, i);
+    size_t public_offset = get_public_offset_safe(bf, i);
+    if (strcmp(public_name, "main") == 0) {
+      bf->main_offset = public_offset;
+    } else if (!manager.public_symbols_mods
+                    .insert(
+                        {public_name, {.mod_id = id, .offset = public_offset}})
+                    .second) {
+      failure("public symbol '%s' loaded more then once\n",
+              get_public_name_safe(bf, i));
     }
   }
   if (name) {
@@ -56,8 +64,11 @@ uint32_t mod_add_impl(Bytefile *bf, bool do_verification,
 
 uint32_t path_mod_load(const char *name, std::filesystem::path &&path,
                        bool do_verification) {
+#ifdef DEBUG_VERSION
+  std::cerr << "- module path load '" << name << "'\n";
+#endif
   Bytefile *module = read_file(path.c_str());
-  return mod_add_impl(module, name);
+  return mod_add_impl(module, do_verification, name);
 }
 extern "C" {
 
@@ -114,6 +125,9 @@ int32_t mod_load(const char *name, bool do_verification) {
 }
 
 uint32_t mod_add(Bytefile *module, bool do_verification) {
+#ifdef DEBUG_VERSION
+  std::cerr << "- add module, no name\n";
+#endif
   return mod_add_impl(module, do_verification);
 }
 

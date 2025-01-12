@@ -9,12 +9,13 @@
 
 /* The unpacked representation of bytecode file */
 typedef struct {
-  char *string_ptr;      /* A pointer to the beginning of the string table */
-  int *imports_ptr;      /* A pointer to the beginning of imports table    */
-  int *public_ptr;       /* A pointer to the beginning of publics table    */
-  char *code_ptr;        /* A pointer to the bytecode itself               */
-  int *global_ptr;       /* A pointer to the global area                   */
-  int code_size;         /* The size (in bytes) of code                    */
+  uint main_offset; /* offset of the function 'main'                        */
+  char *string_ptr; /* A pointer to the beginning of the string table */
+  int *imports_ptr; /* A pointer to the beginning of imports table    */
+  int *public_ptr;  /* A pointer to the beginning of publics table    */
+  char *code_ptr;   /* A pointer to the bytecode itself               */
+  int *global_ptr;  /* A pointer to the global area                   */
+  int code_size;    /* The size (in bytes) of code                    */
   uint stringtab_size;   /* The size (in bytes) of the string table        */
   uint global_area_size; /* The size (in words) of global area             */
   uint imports_number;   /* The number of imports                          */

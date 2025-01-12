@@ -54,8 +54,8 @@ void init_mod_state(uint mod_id, struct State* s) {
 
   s->fp = NULL;
 
-  s->ip = s->bf->code_ptr;
-  s->instr_ip = s->bf->code_ptr;
+  s->ip = s->bf->code_ptr + s->bf->main_offset;
+  s->instr_ip = s->ip;
 
 #ifdef DEBUG_VERSION
   print_stack(s);

@@ -52,7 +52,15 @@ Bytefile *read_file(const char *fname) {
   }
 
   long size = ftell(f);
-  long additional_size = sizeof(void *) * 5 + sizeof(int);
+
+  // [uint] stringtab_size
+  // [uint] global_area_size
+  // [uint] imports_number
+  // [uint] public_symbols_number
+  // char[0] buffer
+  long file_header_size = 4 * sizeof(uint) + sizeof(char[0]);
+
+  long additional_size = sizeof(Bytefile) - file_header_size;
   file = (Bytefile *)malloc(size +
                             additional_size); // file itself + additional data
 
