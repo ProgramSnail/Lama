@@ -5,6 +5,8 @@
 #include <format>
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include <variant>
 #include <vector>
 
 namespace utils {
@@ -63,10 +65,8 @@ T from_number(int n) {
   std::string name8 = std::format("%r{}b", std::move(str_of_int));
   return {.name = name8, .reg = {.name8 = name8, .name64 = name64}};
 }
-consteval T of_8bit(const T &r) { return {.name = r.reg.name8, .reg = r.reg}; }
-consteval T of_64bit(const T &r) {
-  return {.name = r.reg.name64, .reg = r.reg};
-}
+T of_8bit(const T &r) { return {.name = r.reg.name8, .reg = r.reg}; }
+T of_64bit(const T &r) { return {.name = r.reg.name64, .reg = r.reg}; }
 
 const std::string &to_string(const T &r) { return r.name; }
 
@@ -221,7 +221,27 @@ const Register::T &as_register(const Opnd &opnd) {
       *opnd);
 }
 
-// TODO: Opnd to_string
+std::string to_string(const Opnd &opnd) {
+  return std::visit(
+      utils::multifunc{
+          [](const Opnd::R &x) {
+            return std::format("R {}", to_string(x.reg));
+          },
+          [](const Opnd::S &x) { return std::format("S {}", x.pos); },
+          [](const Opnd::L &x) { return std::format("L {}", x.num); },
+          [](const Opnd::I &x) {
+            return std::format("I {} {}", x.num, to_string(*x.opnd));
+          },
+          [](const Opnd::C &x) { return std::format("C {}", x.name); },
+          [](const Opnd::M &x) {
+            return std::format(
+                "M {} {} {} {}", x.kind == DataKind::F ? "Function" : "Data",
+                x.ext == Externality::I ? "Internal" : "External",
+                x.addr == Addressed::A ? "Address" : "Value", x.name);
+          },
+      },
+      *opnd);
+}
 
 /* for convenience */
 using namespace Registers;
@@ -340,7 +360,7 @@ using Call = Instr::Call;
 using CallI = Instr::CallI;
 using Ret = Instr::Ret;
 using Label = Instr::Label;
-using MCJmp = Instr::CJmp;
+using CJmp = Instr::CJmp;
 using Jmp = Instr::Jmp;
 using JmpI = Instr::JmpI;
 using Meta = Instr::Meta;
@@ -352,16 +372,147 @@ using Repmovsl = Instr::Repmovsl;
 
 int stack_offset(int i) { return (i >= 0 ? (i + 1) : (-i + 1)) * word_size; }
 
+std::string to_code(const std::string &env, const Opnd &opnd) {
+  // TODO: check that 'env#prefixed·l' <-> l + env
+  return std::visit(
+      utils::multifunc{
+          [](const Opnd::R &x) { return to_string(x.reg); },
+          [](const Opnd::S &x) {
+            int offset = stack_offset(x.pos);
+            return x.pos >= 0 ? std::format("-{}(%rbp)", offset)
+                              : std::format("-{}(%rbp)", offset);
+          },
+          [&env](const Opnd::M &x) {
+            return std::format(
+                "M {} {} {} {}", x.kind == DataKind::F ? "Function" : "Data",
+                x.ext == Externality::I ? "Internal" : "External",
+                x.addr == Addressed::A ? "Address" : "Value", x.name);
+            if (x.ext == Externality::I || x.kind == DataKind::F) {
+              return std::format("{}(%rip)", x.name);
+            }
+            // else -> x.ext == Externality::E && x.kind == DataKind::D
+            return std::format("{}{}@GOTPCREL(%rip)", x.name,
+                               env); // TODO: does @ mean something (?)
+          },
+          [&env](const Opnd::C &x) {
+            return std::format("${}{}", x.name, env);
+          },
+          [](const Opnd::L &x) { return std::format("${}", x.num); },
+          [&env](const Opnd::I &x) {
+            return x.num == 0
+                       ? std::format("({})", to_code(env, *x.opnd))
+                       : std::format("{}({})", x.num, to_code(env, *x.opnd));
+          },
+      },
+      *opnd);
+}
+
 // TODO: Instr to_string
+std::string to_code(const std::string &env, const Instr &instr) {
+  const auto opnd_to_code = [&env](const Opnd &opnd) -> std::string {
+    return to_code(env, opnd);
+  };
+
+  const auto binop_to_code = [](const std::string &binop) -> std::string {
+    static std::unordered_map<std::string, std::string> ops = {
+        {"+", "addq"}, {"-", "subq"}, {"*", "imulq"},  {"&&", "andq"},
+        {"!!", "orq"}, {"^", "xorq"}, {"cmp", "cmpq"}, {"test", "test"},
+    };
+
+    auto it = ops.find(binop);
+
+    if (it != ops.end()) {
+      return it->second;
+    }
+    failure("unknown binary operator");
+    utils::unreachable();
+  };
+
+  // TODO: check that 'env#prefixed·l' <-> l + env
+  return std::visit(
+      utils::multifunc{
+          [](const Cltd &x) -> std::string { return "\tcqo"; },
+          [](const Set &x) -> std::string {
+            auto r = to_string(Register::of_8bit(x.reg));
+            return std::format("\tset{}\t{}", x.suffix, std::move(r));
+          },
+
+          [&opnd_to_code](const IDiv &x) -> std::string {
+            return std::format("\tidivq\t{}", opnd_to_code(x.opnd));
+          },
+          [&binop_to_code, &opnd_to_code](const Binop &x) -> std::string {
+            return std::format("\t{}\t{},\t{}", binop_to_code(x.op),
+                               opnd_to_code(x.left), opnd_to_code(x.right));
+          },
+          [&opnd_to_code](const Lea &x) -> std::string {
+            return std::format("\tleaq\t{},\t{}", opnd_to_code(x.left),
+                               opnd_to_code(x.right));
+          },
+          [&opnd_to_code](const Mov &x) -> std::string {
+            if (std::holds_alternative<M>(*x.left) &&
+                std::get<M>(*x.left).addr == Addressed::A) {
+              // Mov ((M (_, _, A, _) as x), y)
+              return std::format("\tleaq\t{},\t{}", opnd_to_code(x.left),
+                                 opnd_to_code(x.right));
+
+            } else {
+              return std::format("\tmovq\t{},\t{}", opnd_to_code(x.left),
+                                 opnd_to_code(x.right));
+            }
+          },
+          [&opnd_to_code](const Push &x) -> std::string {
+            return std::format("\tpushq\t{}", opnd_to_code(x.opnd));
+          },
+          [&opnd_to_code](const Pop &x) -> std::string {
+            return std::format("\tpopq\t{}", opnd_to_code(x.opnd));
+          },
+          [](const Ret &x) -> std::string { return "\tret"; },
+          [&env](const Call &x) -> std::string {
+            return std::format("\tcall\t{}{}", x.name, env);
+          },
+          [&opnd_to_code](const CallI &x) -> std::string {
+            return std::format("\tcall\t*({})", opnd_to_code(x.val));
+          },
+          [&env](const Label &x) -> std::string {
+            return std::format("{}{}:\n", x.name, env);
+          },
+          [&env](const Jmp &x) -> std::string {
+            return std::format("\tjmp\t{}{}", x.name, env);
+          },
+          [&opnd_to_code](const JmpI &x) -> std::string {
+            return std::format("\tjmp\t*({})", opnd_to_code(x.opnd));
+          },
+          [&env](const CJmp &x) -> std::string {
+            return std::format("\tj{}\t{}{}", x.left, x.right, env);
+          },
+          [](const Meta &x) -> std::string {
+            return std::format("{}\n", x.name);
+          },
+          [&opnd_to_code](const Dec &x) -> std::string {
+            return std::format("\tdecq\t{}", opnd_to_code(x.opnd));
+          },
+          [&opnd_to_code](const Or1 &x) -> std::string {
+            return std::format("\torq\t$0x0001,\t{}", opnd_to_code(x.opnd));
+          },
+          [&opnd_to_code](const Sal1 &x) -> std::string {
+            return std::format("\tsalq\t{}", opnd_to_code(x.opnd));
+          },
+          [&opnd_to_code](const Sar1 &x) -> std::string {
+            return std::format("\tsarq\t{}", opnd_to_code(x.opnd));
+          },
+          [](const Repmovsl &x) -> std::string { return "\trep movsq\t"; },
+      },
+      *instr);
+}
 
 bool in_memory(const Opnd &opnd) {
   return std::visit(utils::multifunc{
-                        [](const Opnd::M &r) { return true; },
-                        [](const Opnd::S &r) { return true; },
-                        [](const Opnd::I &r) { return true; },
-                        [](const Opnd::C &r) { return false; },
-                        [](const Opnd::R &r) { return false; },
-                        [](const Opnd::L &r) { return false; },
+                        [](const Opnd::M &) { return true; },
+                        [](const Opnd::S &) { return true; },
+                        [](const Opnd::I &) { return true; },
+                        [](const Opnd::C &) { return false; },
+                        [](const Opnd::R &) { return false; },
+                        [](const Opnd::L &) { return false; },
                     },
                     *opnd);
 }
