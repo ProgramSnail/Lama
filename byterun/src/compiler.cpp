@@ -5,6 +5,7 @@
 #include <format>
 #include <functional>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -34,7 +35,7 @@ template <class... Ts> multifunc(Ts...) -> multifunc<Ts...>;
 // TODO: use ranges transform
 template <typename T, typename U>
 std::vector<U> transform(std::vector<T> v, const std::function<U(T &&)> &f) {
-  std::vector<T> result;
+  std::vector<U> result;
   for (auto &&x : v) {
     result.push_back(f(std::move(x)));
   }
@@ -67,6 +68,25 @@ enum class OS { // TODO: other oses
 struct CompilationMode {
   bool is_debug;
   OS os;
+};
+
+enum class Opr {
+  ADD = 0, // +
+  SUB,     // -
+  MULT,    // *
+  DIV,     // /
+  MOD,     // %
+  LEQ,     // <=
+  LT,      // <
+  GT,      // >
+  GEQ,     // >=
+  EQ,      // ==
+  NEQ,     // !=
+  AND,     // &&
+  OR,      // !!
+  XOR,     // ^ (compiler only)
+  CMP,     // cmp (compiler only)
+  TEST,    // test (compiler only)
 };
 
 namespace Register {
@@ -189,6 +209,21 @@ struct Opnd {
 
     I(I &&other) : num(other.num), opnd(std::move(other.opnd)) {}
 
+    I &operator=(const I &other) {
+      if (&other != this) {
+        num = other.num;
+        opnd = std::make_unique<Opnd>(*other.opnd);
+      }
+      return *this;
+    }
+    I &operator=(I &&other) {
+      if (&other != this) {
+        num = other.num;
+        opnd = std::move(other.opnd);
+      }
+      return *this;
+    }
+
     int num;
     std::unique_ptr<Opnd> opnd; /* Indirect operand with offset */
 
@@ -199,14 +234,15 @@ struct Opnd {
 
   T val;
 
-  Opnd(const Opnd &x) : val(x.val) {}
-  Opnd(Opnd &&x) : val(std::move(x.val)) {}
   template <typename U>
-    requires std::is_same_v<U, R> || std::is_same_v<U, S> ||
-             std::is_same_v<U, M> || std::is_same_v<U, C> ||
-             std::is_same_v<U, L> || std::is_same_v<U, I> ||
-             std::is_same_v<U, T>
+    requires(not std::is_same_v<Opnd, std::remove_reference_t<U>>)
   Opnd(U &&x) : val(std::forward<U>(x)) {}
+
+  Opnd(const Register::T x) : val(R{x}) {}
+
+  template <typename U> bool is() const {
+    return std::holds_alternative<U>(val);
+  }
 
   const T &operator*() const { return val; }
   const T &operator->() const { return val; }
@@ -279,8 +315,6 @@ const auto filler =
     Opnd{Opnd::M{DataKind::D, Externality::I, Addressed::V, "filler"}};
 
 struct Instr {
-  template <typename T> Instr(T &&x) : val(std::forward<T>(x)) {}
-
   /* copies a value from the first to the second operand   */
   struct Mov {
     Opnd left;
@@ -294,7 +328,7 @@ struct Instr {
   /* makes a binary operation; note, the first operand
      designates x86 operator, not the source language one */
   struct Binop {
-    std::string op;
+    Opr op;
     Opnd left;
     Opnd right;
   };
@@ -376,6 +410,14 @@ struct Instr {
 
   const T &operator*() const { return val; }
   const T &operator->() const { return val; }
+
+  template <typename U>
+    requires(not std::is_same_v<Instr, std::remove_reference_t<U>>)
+  Instr(U &&x) : val(std::forward<U>(x)) {}
+
+  template <typename U> bool is() const {
+    return std::holds_alternative<U>(val);
+  }
 };
 using Mov = Instr::Mov;
 using Lea = Instr::Lea;
@@ -458,10 +500,10 @@ template <typename U> struct AbstractSymbolicStack {
   using Register = SymbolicLocation::Register;
 
   static AbstractSymbolicStack::T empty(std::vector<U> registers) {
-    return {{StackState::E()}, std::move(registers)};
+    return {{typename StackState::E{}}, std::move(registers)};
   }
 
-  static T next(T &&v) {
+  static T next(T v) {
     StackState new_state =
         std::visit(utils::multifunc{
                        [](const S &x) -> StackState { return {S(x.n)}; },
@@ -478,14 +520,16 @@ template <typename U> struct AbstractSymbolicStack {
     return {new_state, std::move(v.registers)};
   }
 
-  static T previous(T &&v) {
+  static T previous(T v) {
     StackState new_state = std::visit(
         utils::multifunc{
             [&v](const S &x) -> StackState {
-              return x.n == 0 ? R(v.registers.size() - 1) : S(x.n - 1);
+              return x.n == 0 ? StackState{R{
+                                    static_cast<int>(v.registers.size() - 1)}}
+                              : StackState{S{x.n - 1}};
             },
             [&v](const R &x) -> StackState {
-              return x.n == 0 ? E() : R(x.n - 1);
+              return x.n == 0 ? StackState{E{}} : StackState{R{x.n - 1}};
             },
             [](const E &x) -> StackState {
               failure("Empty stack %s: %d", __FILE__, __LINE__);
@@ -501,7 +545,7 @@ template <typename U> struct AbstractSymbolicStack {
         utils::multifunc{
             [](const S &x) -> SymbolicLocation { return {Stack(x.n)}; },
             [&v](const R &x) -> SymbolicLocation {
-              return Register{v.registers[x.n]};
+              return {Register{v.registers[x.n]}};
             },
             [](const E &x) -> SymbolicLocation {
               failure("Empty stack %s: %d", __FILE__, __LINE__);
@@ -511,7 +555,9 @@ template <typename U> struct AbstractSymbolicStack {
         *v.state);
   }
 
-  static bool is_empty(const T &v) { return v.state == StackState::E; }
+  static bool is_empty(const T &v) {
+    return std::holds_alternative<typename StackState::E>(*v.state);
+  }
 
   // TODO: replace with range
   static std::vector<U> live_registers(const T &v) {
@@ -519,9 +565,9 @@ template <typename U> struct AbstractSymbolicStack {
                           [&v](const S &x) { return v.registers; },
                           [&v](const R &x) {
                             std::vector<U> registers_prefix;
-                            registers_prefix.insert(v.registers.begin(),
-                                                    v.registers.begin() + x.n +
-                                                        1); // TODO: +1 ??
+                            registers_prefix.insert(
+                                registers_prefix.end(), v.registers.begin(),
+                                v.registers.begin() + x.n + 1); // TODO: +1 ??
                             // (Array.sub registers 0 (n + 1))
                             return registers_prefix;
                           },
@@ -585,14 +631,14 @@ struct SymbolicStack {
   /* To use free argument registers we have to rewrite function call
      compilation. Otherwise we will result with the following code in
      arguments setup: movq    %rcx,   %rdx movq    %rdx,   %rsi */
-  T empty(size_t nlocals) {
+  static T empty(size_t nlocals) {
     return {
         .state = AbSS::empty(Registers::extra_caller_saved_registers),
         .nlocals = nlocals,
     };
   }
 
-  Opnd opnd_from_loc(const T &v, const AbSS::SymbolicLocation &loc) {
+  static Opnd opnd_from_loc(const T &v, const AbSS::SymbolicLocation &loc) {
     return std::visit(
         utils::multifunc{
             [](const Register &x) -> Opnd { return {Opnd::R{x.r}}; },
@@ -601,29 +647,29 @@ struct SymbolicStack {
         *loc);
   }
 
-  bool is_empty(const T &v) { return AbSS::is_empty(v.state); };
+  static bool is_empty(const T &v) { return AbSS::is_empty(v.state); };
 
-  std::vector<Opnd> live_registers(const T &v) {
+  static std::vector<Opnd> live_registers(const T &v) {
     return utils::transform<::Register::T, Opnd>(
         AbSS::live_registers(v.state),
         [](auto &&r) -> Opnd { return Opnd::R{r}; });
   }
 
-  size_t stack_size(const T &v) { return AbSS::stack_size(v.state); }
+  static size_t stack_size(const T &v) { return AbSS::stack_size(v.state); }
 
-  std::pair<T, Opnd> allocate(const T &v) {
+  static std::pair<T, Opnd> allocate(const T &v) {
     auto [state, loc] = AbSS::allocate(v.state);
     return {{std::move(state), v.nlocals}, opnd_from_loc(v, loc)};
   } // TODO: check
 
-  std::pair<T, Opnd> pop(const T &v) {
+  static std::pair<T, Opnd> pop(const T &v) {
     auto [state, loc] = AbSS::pop(v.state);
     return {{std::move(state), v.nlocals}, opnd_from_loc(v, loc)};
   }
 
-  Opnd peek(const T &v) { return opnd_from_loc(v, AbSS::peek(v.state)); }
+  static Opnd peek(const T &v) { return opnd_from_loc(v, AbSS::peek(v.state)); }
 
-  std::pair<Opnd, Opnd> peek2(T const &v) {
+  static std::pair<Opnd, Opnd> peek2(const T &v) {
     const auto [loc1, loc2] = AbSS::peek2(v.state);
     return {opnd_from_loc(v, loc1), opnd_from_loc(v, loc2)};
   }
@@ -651,11 +697,13 @@ template <typename Prg> struct Indexer {
   MapS<Prg> m;
 };
 
-enum class Mode {
-  // TODO
+struct Mode {
+  bool is_debug;
+  OS target_os;
 };
 
-template <typename Prg, Mode mode_init> struct Env : public Indexer<Prg> {
+// TODO: rebuild in c++ way
+template <typename Prg, Mode mode> struct Env : public Indexer<Prg> {
 private:
   const std::string chars =
       "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'";
@@ -670,17 +718,15 @@ private:
   size_t stack_slots = 0;    /* maximal number of stack positions */
   size_t static_size = 0;    /* static data size */
   SymbolicStack::T stack = SymbolicStack::empty(0); /* symbolic stack */
-  // size_t nargs = 0; /* number of function arguments */
-  std::vector<...> locals; /* function local variables */
-  MapS<...> stackmap;      /* labels to stack map */
-  bool barrier = false;    /* barrier condition */
+  std::vector<std::string> locals; /* function local variables */
+  MapS<SymbolicStack::T> stackmap; /* labels to stack map */
+  bool barrier = false;            /* barrier condition */
 
   SetS externs;
   size_t nlabels = 0;
   bool first_line = true;
 
 public:
-  Mode mode = mode_init; // as arg /* compilation mode */
   SetS publics;
 
   size_t max_locals_size =
@@ -700,7 +746,8 @@ public:
     }
   }
 
-  void print_stack() {
+  std::string print_stack() const {
+    std::stringstream result;
     // TODO
     // let rec show stack acc =
     //   if SymbolicStack.is_empty stack then acc
@@ -709,9 +756,11 @@ public:
     //     show stack (show_opnd loc ^ " " ^ acc)
     // in
     // show stack ""
+    return result.str();
   }
 
-  void print_locals() {
+  std::string print_locals() const {
+    std::stringstream result;
     // TODO
     // Printf.printf "LOCALS: size = %d\n" static_size;
     // List.iter
@@ -721,10 +770,11 @@ public:
     //     Printf.printf ")\n")
     //   locals;
     // Printf.printf "END LOCALS\n"
+    return result.str();
   }
 
   /* Assert empty stack */
-  void assert_empty_stack() const { assert(stack.is_empty()); }
+  void assert_empty_stack() const { assert(SymbolicStack::is_empty(stack)); }
 
   /* check barrier condition */
   bool is_barrier() { return barrier; }
@@ -742,16 +792,24 @@ public:
   void set_stack(std::string const &l) { stackmap.insert({l, stack}); }
 
   /* retrieves a stack for a label */
-  std::optional<SymbolicStack *> retrieve_stack(std::string const &l) {
+  std::optional<SymbolicStack::T *> retrieve_stack(std::string const &l) {
+    auto it = stackmap.find(l);
+    if (it != stackmap.end()) {
+      return &it->second;
+    }
+
+    return std::nullopt;
     // try {<stack = M.find l stackmap>} with Not_found -> self
   }
 
   /* checks if there is a stack for a label */
-  bool has_stack() const { /*l = M.mem l stackmap;*/ }
-  bool is_external() const { /*name = S.mem name externs;*/ }
+  bool has_stack(const std::string &l) const { return stackmap.count(l) != 0; }
+  bool is_external(const std::string &name) const {
+    return externs.count(name) != 0;
+  }
 
   /* gets a location for a variable */
-  Opnd loc(x) {
+  Opnd loc(/*x*/) {
     // match x with
     // | Value.Global name ->
     //     let loc_name = labeled_global name in
@@ -768,7 +826,7 @@ public:
   }
 
   /* allocates a fresh position on a symbolic stack */
-  std::pair<Opnd, ...> allocate() {
+  Opnd allocate() {
     // let stack, opnd = SymbolicStack.allocate stack in
     // let stack_slots =
     //   max stack_slots (static_size + SymbolicStack.stack_size stack)
@@ -777,7 +835,7 @@ public:
   }
 
   /* pops one operand from the symbolic stack */
-  void pop() {
+  Opnd pop() {
     // let stack, opnd = SymbolicStack.pop stack in
     // (opnd, {<stack>})
   }
@@ -798,12 +856,12 @@ public:
   }
 
   /* peeks the top of the stack (the stack does not change) */
-  auto peek() const { return stack.peek(); }
+  Opnd peek() const { return SymbolicStack::peek(stack); }
 
   /* peeks two topmost values from the stack (the stack itself does not
    * change)
    */
-  auto peek2() const { return stack.peek2(); }
+  std::pair<Opnd, Opnd> peek2() const { return ::SymbolicStack::peek2(stack); }
 
   /* tag hash: gets a hash for a string tag */
   int64_t hash(const std::string &tag) {
@@ -815,7 +873,7 @@ public:
   }
 
   /* registers a variable in the environment */
-  void register_variable(x) {
+  void register_variable(/*x*/) {
     // match x with
     // | Value.Global name -> {<globals = S.add (labeled_global name)
     // globals>} | _ -> self
@@ -872,15 +930,24 @@ public:
   // method nargs = nargs
 
   /* gets all global variables */
-  SetS get_globals() const { /*S.elements (S.diff globals externs)*/ }
+  std::vector<std::string> get_globals() const {
+    std::vector<std::string> result;
+    result.resize(globals.size());
+    for (const auto &x : globals) {
+      if (externs.count(x) == 0) {
+        result.push_back(x);
+      }
+    }
+    return result;
+  }
 
   /* gets all string definitions */
   SetS get_strings() const { /*M.bindings stringm*/ }
 
   /* gets a number of stack positions allocated */
-  size_t get_allocated() const { retunr stack_slots; }
+  size_t get_allocated() const { return stack_slots; }
   std::string get_allocated_size() const {
-    return utils::labeled(std::format("S{}_SIZE", fname));
+    // return labeled(std::format("S{}_SIZE", fname));
   }
 
   /* enters a function */
@@ -896,39 +963,60 @@ public:
   }
 
   /* returns a label for the epilogue */
-  std::string epilogue() { return labeled(std::format("{}_epilogue", fname)); }
+  std::string epilogue() {
+    // return labeled(std::format("{}_epilogue", fname));
+  }
 
   /* returns a name for local size meta-symbol */
-  std::string lsize() const { return labeled(std::format("{}_SIZE", fname)); }
+  std::string lsize() const {
+    // return labeled(std::format("{}_SIZE", fname));
+  }
 
   /* returns a list of live registers */
-  std::vector<...> live_registers() {
-    // Array.to_list
-    //   (Array.sub argument_registers 0
-    //      (min nargs (Array.length argument_registers)))
-    // @ SymbolicStack.live_registers stack
+  std::vector<Opnd> live_registers() {
+    std::vector<Opnd> result;
+
+    std::vector<Register::T> array_registers;
+    array_registers.insert(array_registers.end(), argument_registers.begin(),
+                           argument_registers.begin() +
+                               std::min(nargs, argument_registers.size()));
+
+    std::vector<Opnd> array_result = utils::transform<Register::T, Opnd>(
+        std::move(array_registers),
+        [](Register::T &&r) -> Opnd { return {r}; });
+    result.insert(result.end(), array_result.begin(), array_result.end());
+
+    std::vector<Opnd> stack_result = SymbolicStack::live_registers(stack);
+    result.insert(result.end(), stack_result.begin(), stack_result.end());
+    return result;
   }
+
+  bool do_opt_stabs() const { return mode.target_os == OS::LINUX; }
 
   /* generate a line number information for current function */
-  std::string gen_line(size_t line) {
-    // let lab = Printf.sprintf ".L%d" nlabels in
-    // ( {<nlabels = nlabels + 1; first_line = false>},
-    //   if fname = "main" then
-    //     opt_stabs self
-    //       [ Meta (Printf.sprintf "\t.stabn 68,0,%d,%s" line lab) ]
-    //     @ [ Label lab ]
-    //   else
-    //     (if first_line then
-    //        opt_stabs self [ Meta (Printf.sprintf "\t.stabn 68,0,%d,0" line)
-    //        ]
-    //      else [])
-    //     @ opt_stabs self
-    //         [ Meta (Printf.sprintf "\t.stabn 68,0,%d,%s-%s" line lab fname)
-    //         ]
-    //     @ [ Label lab ] )
+  std::vector<Instr> gen_line(size_t line) {
+    const std::string lab = std::format(".L{}", nlabels);
+    ++nlabels;
+    first_line = false;
+
+    std::vector<Instr> code;
+    if (do_opt_stabs()) {
+      if (fname == "main") {
+        code.push_back(Meta{std::format("\t.stabn 68,0,{},{}", line, lab)});
+      } else {
+
+        if (first_line) {
+          code.push_back(Meta{std::format("\t.stabn 68,0,{},0", line)});
+        }
+        code.push_back(
+            Meta{std::format("\t.stabn 68,0,{},{}-{}", line, lab, fname)});
+      }
+    }
+    code.push_back(Label{lab});
+    return code;
   }
 
-  std::string prefixed(const std::string &label) {
+  std::string prefixed(const std::string &label) const {
     if (mode.target_os == OS::DARWIN) {
       return std::format("_{}", label);
     }
@@ -938,8 +1026,11 @@ public:
 
 int stack_offset(int i) { return (i >= 0 ? (i + 1) : (-i + 1)) * word_size; }
 
-std::string to_code(const Env &env, const Opnd &opnd) {
-  // TODO: check that 'env#prefixed·l' <-> l + env
+// template <typename Prg, Mode mode>
+// FIXME: testing
+using Prg = int;
+constexpr Mode mode_ = {};
+std::string to_code(const Env<Prg, mode_> &env, const Opnd &opnd) {
   return std::visit(
       utils::multifunc{
           [](const Opnd::R &x) { return to_string(x.reg); },
@@ -974,16 +1065,18 @@ std::string to_code(const Env &env, const Opnd &opnd) {
       *opnd);
 }
 
-// TODO: Instr to_string
-std::string to_code(const Env &env, const Instr &instr) {
+// template <typename Prg, Mode mode>
+// FIXME: testing
+std::string to_code(const Env<Prg, mode_> &env, const Instr &instr) {
   const auto opnd_to_code = [&env](const Opnd &opnd) -> std::string {
     return to_code(env, opnd);
   };
 
-  const auto binop_to_code = [](const std::string &binop) -> std::string {
-    static std::unordered_map<std::string, std::string> ops = {
-        {"+", "addq"}, {"-", "subq"}, {"*", "imulq"},  {"&&", "andq"},
-        {"!!", "orq"}, {"^", "xorq"}, {"cmp", "cmpq"}, {"test", "test"},
+  const auto binop_to_code = [](Opr binop) -> std::string {
+    static std::unordered_map<Opr, std::string> ops = {
+        {Opr::ADD, "addq"}, {Opr::SUB, "subq"},  {Opr::MULT, "imulq"},
+        {Opr::AND, "andq"}, {Opr::OR, "orq"},    {Opr::XOR, "xorq"},
+        {Opr::CMP, "cmpq"}, {Opr::TEST, "test"},
     };
 
     auto it = ops.find(binop);
@@ -995,7 +1088,6 @@ std::string to_code(const Env &env, const Instr &instr) {
     utils::unreachable();
   };
 
-  // TODO: check that 'env#prefixed·l' <-> l + env
   return std::visit(
       utils::multifunc{
           [](const Cltd &x) -> std::string { return "\tcqo"; },
@@ -1073,15 +1165,7 @@ std::string to_code(const Env &env, const Instr &instr) {
 }
 
 bool in_memory(const Opnd &opnd) {
-  return std::visit(utils::multifunc{
-                        [](const Opnd::M &) { return true; },
-                        [](const Opnd::S &) { return true; },
-                        [](const Opnd::I &) { return true; },
-                        [](const Opnd::C &) { return false; },
-                        [](const Opnd::R &) { return false; },
-                        [](const Opnd::L &) { return false; },
-                    },
-                    *opnd);
+  return opnd.is<M>() || opnd.is<S>() || opnd.is<I>();
 }
 
 std::vector<Instr> mov(const Opnd &x, const Opnd &s) {
@@ -1105,4 +1189,187 @@ std::vector<Instr> mov(const Opnd &x, const Opnd &s) {
 /* Boxing for numeric values */
 int box(int n) { return (n << 1) | 1; }
 
-void compile_binop()
+/*
+  Compile binary operation
+
+  compile_binop : env -> string -> env * instr list
+ */
+// template <typename Prg, Mode mode>
+std::vector<Instr> compile_binop(Env<Prg, mode_> &env, Opr op) {
+  const auto suffix = [](Opr op) {
+    static std::unordered_map<Opr, std::string> ops = {
+        {Opr::LT, "l"},   {Opr::LEQ, "le"}, {Opr::EQ, "e"},
+        {Opr::NEQ, "ne"}, {Opr::GEQ, "ge"}, {Opr::GT, "g"},
+    };
+
+    auto it = ops.find(op);
+
+    if (it != ops.end()) {
+      return it->second;
+    }
+    failure("unknown operator");
+    utils::unreachable();
+  };
+
+  std::pair<Opnd, Opnd> xy = env.peek2();
+
+  const auto [x, y] = xy;
+  /* For binary operations requiring no extra register */
+  const auto without_extra =
+      [&env](const std::function<std::vector<Instr>()> &op) {
+        const auto _x = env.pop();
+        return op();
+      };
+  /* For binary operations requiring rdx */
+  const auto with_rdx =
+      [&env](const std::function<std::vector<Instr>(Register::T)> &op) {
+        if (not env.rdx_in_use()) {
+          const auto _x = env.pop();
+          return op(rdx);
+        }
+        const auto extra = env.allocate();
+        const auto _extra = env.pop();
+        const auto _x = env.pop();
+
+        std::vector<Instr> code;
+        code.push_back(Mov{rdx, extra});
+        std::vector<Instr> op_code = op(rdx);
+        code.insert(code.end(), op_code.begin(), op_code.end());
+        code.push_back(Mov{extra, rdx});
+
+        return code;
+      };
+  /* For binary operations requiring any extra register */
+  const auto with_extra =
+      [&env](const std::function<std::vector<Instr>(Opnd)> &op) {
+        const auto extra = env.allocate();
+        const auto _extra = env.pop();
+        const auto _x = env.pop();
+
+        if (in_memory(extra)) {
+          std::vector<Instr> code;
+          code.push_back(Mov{rdx, extra});
+          std::vector<Instr> op_code = op(rdx);
+          code.insert(code.end(), op_code.begin(), op_code.end());
+          code.push_back(Mov{extra, rdx});
+          return code;
+        }
+        return op(extra);
+      };
+  switch (op) {
+  case Opr::DIV:
+    return with_rdx([&x, &y](const auto &rdx) -> std::vector<Instr> {
+      return {Mov{y, rax}, Sar1{rax}, Binop{"^", rdx, rdx},
+              Cltd{},      Sar1{x},   IDiv{x},
+              Sal1{rax},   Or1{rax},  Mov{rax, y}};
+    });
+  case Opr::MOD:
+    return with_rdx([&x, &y](const auto &rdx) -> std::vector<Instr> {
+      return {
+          Mov{y, rax}, Sar1{rax}, Cltd{},   Sar1{x},
+          IDiv{x},     Sal1{rdx}, Or1{rdx}, Mov{rdx, y},
+      };
+    });
+  case Opr::LT:
+  case Opr::LEQ:
+  case Opr::EQ:
+  case Opr::NEQ:
+  case Opr::GEQ:
+  case Opr::GT:
+    return in_memory(x)
+               ? with_extra([&x, &y, &op,
+                             &suffix](const auto &extra) -> std::vector<Instr> {
+                   return {
+                       Binop{Opr::XOR, rax, rax},
+                       Mov{x, extra},
+                       Binop{"cmp", extra, y},
+                       Set{suffix(op), Registers::rax},
+                       Sal1{rax},
+                       Or1{rax},
+                       Mov{rax, y},
+                   };
+                 })
+               : without_extra([&x, &y, &op, &suffix]() -> std::vector<Instr> {
+                   return {
+                       Binop{Opr::XOR, rax, rax},
+                       Binop{Opr::CMP, x, y},
+                       Set{suffix(op), Registers::rax},
+                       Sal1{rax},
+                       Or1{rax},
+                       Mov{rax, y},
+                   };
+                 });
+  case Opr::MULT:
+    return without_extra([&x, &y, &op]() {
+      return in_memory(y) ? std::vector<Instr>{
+        Dec {y},
+        Mov{x, rax},
+        Sar1{ rax},
+        Binop{op, y, rax},
+        Or1 {rax},
+        Mov{rax, y},
+      } : std::vector<Instr>{
+        Dec{y}, Mov{x, rax}, Sar1{rax},
+        Binop{op, rax, y}, Or1{y},
+      };
+    });
+  case Opr::AND:
+    return with_extra([&x, &y, &op](const auto &extra) -> std::vector<Instr> {
+      return {
+          Dec{x},
+          Mov{x, rax},
+          Binop{op, x, rax},
+          Mov{L{0}, rax},
+          Set{"ne", Registers::rax},
+          Dec{y},
+          Mov{y, extra},
+          Binop{op, y, extra},
+          Mov{L{0}, extra},
+          Set{"ne", as_register(extra)},
+          Binop{op, extra, rax},
+          Set{"ne", Registers::rax},
+          Sal1{rax},
+          Or1{rax},
+          Mov{rax, y},
+      };
+    });
+  case Opr::OR:
+    return without_extra([&x, &y, &op]() -> std::vector<Instr> {
+      return {
+          Mov{y, rax},       Sar1{rax},      Sar1{x},
+          Binop{op, x, rax}, Mov{L{0}, rax}, Set{"ne", Registers::rax},
+          Sal1{rax},         Or1{rax},       Mov{rax, y},
+      };
+    });
+  case Opr::ADD:
+    return without_extra([&x, &y, &op]() {
+      return in_memory(x) && in_memory(y) ?std::vector<Instr> {
+        Mov{x, rax},
+        Dec{ rax},
+        Binop{op, rax, y},
+      }  : std::vector<Instr>{
+        Binop{op, x, y},
+        Dec{ y},
+      };
+    });
+  case Opr::SUB:
+    return without_extra([&x, &y, &op]() {
+      return in_memory(x) && in_memory(y) ?std::vector<Instr> {
+        Mov{x, rax},
+        Binop{op, rax, y},
+        Or1{y},
+      } :std::vector<Instr> {
+        Binop{op, x, y},
+        Or1{y},
+      };
+    });
+  default:
+    failure("Unexpected pattern: %s: %d", __FILE__, __LINE__);
+    break;
+  }
+  utils::unreachable();
+}
+
+std::vector<Instr> compile_call(/*env ?fname nargs tail*/) {}
+
+std::vector<Instr> compile(/*cmd env imports code*/) {}
