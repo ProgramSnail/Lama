@@ -42,6 +42,23 @@ std::vector<U> transform(std::vector<T> v, const std::function<U(T &&)> &f) {
   return result;
 }
 
+template <typename T> std::vector<T> concat(std::vector<T> &&x) {
+  return std::move(x);
+}
+
+template <typename T, typename... Args>
+std::vector<T> concat(std::vector<T> &&x, std::vector<T> &&y, Args &&...args) {
+  x.insert(x.end(), std::move_iterator(y.begin()), std::move_iterator(y.end()));
+  return concat(std::move(x), std::forward<Args>(args)...);
+}
+
+// template <typename T, typename... Args>
+// std::vector<T> concat(std::vector<T> x, const std::vector<T> &y,
+//                       Args &&...args) {
+//   x.insert(x.end(), y.begin(), y.end());
+//   return concat(std::move(x), std::forward<Args>(args)...);
+// }
+
 constexpr const std::string_view normal_label = "L";
 constexpr const std::string_view builtin_label = "B";
 constexpr const std::string_view global_label = "global_";
@@ -204,6 +221,9 @@ struct Opnd {
     bool operator==(const L &other) const = default;
   };
   struct I {
+    I(int num, const Opnd &opnd)
+        : num(num), opnd(std::make_unique<Opnd>(opnd)) {}
+
     I(const I &other)
         : num(other.num), opnd(std::make_unique<Opnd>(*other.opnd)) {}
 
@@ -441,6 +461,41 @@ using Sal1 = Instr::Sal1;
 using Sar1 = Instr::Sar1;
 using Repmovsl = Instr::Repmovsl;
 
+struct ValT {
+  struct Global {
+    std::string s;
+  };
+  struct Local {
+    int n;
+  };
+  struct Arg {
+    int n;
+  };
+  struct Access {
+    int n;
+  };
+  struct Fun {
+    std::string s;
+  };
+
+  using T = std::variant<Global, Local, Arg, Access, Fun>;
+
+  T val;
+
+  template <typename U>
+    requires(not std::is_same_v<ValT, std::remove_reference_t<U>>)
+  ValT(U &&x) : val(std::forward<U>(x)) {}
+
+  template <typename U> bool is() const {
+    return std::holds_alternative<U>(val);
+  }
+
+  const T &operator*() const { return val; }
+  const T &operator->() const { return val; }
+
+  bool operator==(const ValT &other) const = default;
+};
+
 template <typename U> struct AbstractSymbolicStack {
   // type 'a t
   // type 'a symbolic_location = Stack of int | Register of 'a
@@ -561,19 +616,20 @@ template <typename U> struct AbstractSymbolicStack {
 
   // TODO: replace with range
   static std::vector<U> live_registers(const T &v) {
-    return std::visit(utils::multifunc{
-                          [&v](const S &x) { return v.registers; },
-                          [&v](const R &x) {
-                            std::vector<U> registers_prefix;
-                            registers_prefix.insert(
-                                registers_prefix.end(), v.registers.begin(),
-                                v.registers.begin() + x.n + 1); // TODO: +1 ??
-                            // (Array.sub registers 0 (n + 1))
-                            return registers_prefix;
-                          },
-                          [](const E &x) { return std::vector<U>{}; },
-                      },
-                      *v.state);
+    return std::visit( //
+        utils::multifunc{
+            [&v](const S &x) { return v.registers; },
+            [&v](const R &x) {
+              std::vector<U> registers_prefix;
+              registers_prefix.insert(registers_prefix.end(),
+                                      v.registers.begin(),
+                                      v.registers.begin() + x.n + 1);
+              // NOTE: same to (Array.sub registers 0 (n + 1))
+              return registers_prefix;
+            },
+            [](const E &x) { return std::vector<U>{}; },
+        },
+        *v.state);
   }
 
   static size_t stack_size(const T &v) {
@@ -799,7 +855,6 @@ public:
     }
 
     return std::nullopt;
-    // try {<stack = M.find l stackmap>} with Not_found -> self
   }
 
   /* checks if there is a stack for a label */
@@ -809,7 +864,8 @@ public:
   }
 
   /* gets a location for a variable */
-  Opnd loc(/*x*/) {
+  Opnd loc(const ValT &x) {
+    // TODO
     // match x with
     // | Value.Global name ->
     //     let loc_name = labeled_global name in
@@ -827,23 +883,25 @@ public:
 
   /* allocates a fresh position on a symbolic stack */
   Opnd allocate() {
-    // let stack, opnd = SymbolicStack.allocate stack in
-    // let stack_slots =
-    //   max stack_slots (static_size + SymbolicStack.stack_size stack)
-    // in
-    // (opnd, {<stack_slots; stack>})
+    auto [new_stack, opnd] = SymbolicStack::allocate(stack);
+    stack = std::move(new_stack);
+    stack_slots =
+        std::max(stack_slots, (static_size + SymbolicStack::stack_size(stack)));
+    return opnd;
   }
 
   /* pops one operand from the symbolic stack */
   Opnd pop() {
-    // let stack, opnd = SymbolicStack.pop stack in
-    // (opnd, {<stack>})
+    auto [new_stack, opnd] = SymbolicStack::pop(stack);
+    stack = std::move(new_stack);
+    return opnd;
   }
 
   /* is rdx register in use */
   bool rdx_in_use() const { return nargs > 2; }
 
   std::vector<Opnd> arguments_locations(size_t n) {
+    // TODO
     // if n < argument_registers_size then
     //   ( Array.to_list (Array.sub argument_registers 0 n)
     //     |> List.map (fun r -> Register r),
@@ -864,23 +922,25 @@ public:
   std::pair<Opnd, Opnd> peek2() const { return ::SymbolicStack::peek2(stack); }
 
   /* tag hash: gets a hash for a string tag */
-  int64_t hash(const std::string &tag) {
-    // let h = Stdlib.ref 0 in
-    // for i = 0 to min (String.length tag - 1) 9 do
-    //   h := (!h lsl 6) lor String.index chars tag.[i]
-    // done;
-    // !h
+  uint64_t hash(const std::string &tag) {
+    assert(!tag.empty());
+    uint64_t h = 0;
+    for (size_t i = 0; i < std::min((tag.size() - 1), 9lu); ++i) {
+      h = (h << 6) | chars[tag[i]];
+    }
+    return h;
   }
 
   /* registers a variable in the environment */
-  void register_variable(/*x*/) {
-    // match x with
-    // | Value.Global name -> {<globals = S.add (labeled_global name)
-    // globals>} | _ -> self
+  void register_variable(const ValT &x) {
+    if (x.is<ValT::Global>()) {
+      globals.insert(utils::labeled_global(std::get<ValT::Global>(*x).s));
+    }
   }
 
   /* registers a string constant */
-  void register_string(const std::string &x) {
+  Opnd register_string(const std::string &x) {
+    // TODO
     // let escape x =
     //   let n = String.length x in
     //   let buf = Buffer.create (n * 2) in
@@ -947,7 +1007,7 @@ public:
   /* gets a number of stack positions allocated */
   size_t get_allocated() const { return stack_slots; }
   std::string get_allocated_size() const {
-    // return labeled(std::format("S{}_SIZE", fname));
+    return utils::labeled(std::format("S{}_SIZE", fname));
   }
 
   /* enters a function */
@@ -964,18 +1024,16 @@ public:
 
   /* returns a label for the epilogue */
   std::string epilogue() {
-    // return labeled(std::format("{}_epilogue", fname));
+    return utils::labeled(std::format("{}_epilogue", fname));
   }
 
   /* returns a name for local size meta-symbol */
   std::string lsize() const {
-    // return labeled(std::format("{}_SIZE", fname));
+    return utils::labeled(std::format("{}_SIZE", fname));
   }
 
   /* returns a list of live registers */
   std::vector<Opnd> live_registers() {
-    std::vector<Opnd> result;
-
     std::vector<Register::T> array_registers;
     array_registers.insert(array_registers.end(), argument_registers.begin(),
                            argument_registers.begin() +
@@ -984,11 +1042,9 @@ public:
     std::vector<Opnd> array_result = utils::transform<Register::T, Opnd>(
         std::move(array_registers),
         [](Register::T &&r) -> Opnd { return {r}; });
-    result.insert(result.end(), array_result.begin(), array_result.end());
 
-    std::vector<Opnd> stack_result = SymbolicStack::live_registers(stack);
-    result.insert(result.end(), stack_result.begin(), stack_result.end());
-    return result;
+    return utils::concat(std::move(array_result),
+                         SymbolicStack::live_registers(stack));
   }
 
   bool do_opt_stabs() const { return mode.target_os == OS::LINUX; }
@@ -1073,7 +1129,7 @@ std::string to_code(const Env<Prg, mode_> &env, const Instr &instr) {
   };
 
   const auto binop_to_code = [](Opr binop) -> std::string {
-    static std::unordered_map<Opr, std::string> ops = {
+    const static std::unordered_map<Opr, std::string> ops = {
         {Opr::ADD, "addq"}, {Opr::SUB, "subq"},  {Opr::MULT, "imulq"},
         {Opr::AND, "andq"}, {Opr::OR, "orq"},    {Opr::XOR, "xorq"},
         {Opr::CMP, "cmpq"}, {Opr::TEST, "test"},
@@ -1197,7 +1253,7 @@ int box(int n) { return (n << 1) | 1; }
 // template <typename Prg, Mode mode>
 std::vector<Instr> compile_binop(Env<Prg, mode_> &env, Opr op) {
   const auto suffix = [](Opr op) {
-    static std::unordered_map<Opr, std::string> ops = {
+    const static std::unordered_map<Opr, std::string> ops = {
         {Opr::LT, "l"},   {Opr::LEQ, "le"}, {Opr::EQ, "e"},
         {Opr::NEQ, "ne"}, {Opr::GEQ, "ge"}, {Opr::GT, "g"},
     };
@@ -1231,13 +1287,8 @@ std::vector<Instr> compile_binop(Env<Prg, mode_> &env, Opr op) {
         const auto _extra = env.pop();
         const auto _x = env.pop();
 
-        std::vector<Instr> code;
-        code.push_back(Mov{rdx, extra});
-        std::vector<Instr> op_code = op(rdx);
-        code.insert(code.end(), op_code.begin(), op_code.end());
-        code.push_back(Mov{extra, rdx});
-
-        return code;
+        return utils::concat(std::vector<Instr>{Mov{rdx, extra}}, op(rdx),
+                             std::vector<Instr>{Mov{extra, rdx}});
       };
   /* For binary operations requiring any extra register */
   const auto with_extra =
@@ -1247,12 +1298,8 @@ std::vector<Instr> compile_binop(Env<Prg, mode_> &env, Opr op) {
         const auto _x = env.pop();
 
         if (in_memory(extra)) {
-          std::vector<Instr> code;
-          code.push_back(Mov{rdx, extra});
-          std::vector<Instr> op_code = op(rdx);
-          code.insert(code.end(), op_code.begin(), op_code.end());
-          code.push_back(Mov{extra, rdx});
-          return code;
+          return utils::concat(std::vector<Instr>{Mov{rdx, extra}}, op(rdx),
+                               std::vector<Instr>{Mov{extra, rdx}});
         }
         return op(extra);
       };
@@ -1370,42 +1417,33 @@ std::vector<Instr> compile_binop(Env<Prg, mode_> &env, Opr op) {
   utils::unreachable();
 }
 
-std::vector<Instr> compile_call(/*env ?fname nargs tail*/) {}
-
-struct ValT {
-  struct Global {
-    std::string s;
-  };
-  struct Local {
-    int n;
-  };
-  struct Arg {
-    int n;
-  };
-  struct Access {
-    int n;
-  };
-  struct Fun {
-    std::string s;
-  };
-
-  using T = std::variant<Global, Local, Arg, Access, Fun>;
-
-  T val;
-
-  template <typename U>
-    requires(not std::is_same_v<ValT, std::remove_reference_t<U>>)
-  ValT(U &&x) : val(std::forward<U>(x)) {}
-
-  template <typename U> bool is() const {
-    return std::holds_alternative<U>(val);
-  }
-
-  const T &operator*() const { return val; }
-  const T &operator->() const { return val; }
-
-  bool operator==(const ValT &other) const = default;
+/* For pointers to be marked by GC as alive they have to be located on the
+   stack. As we do not have control where does the C compiler locate them in the
+   moment of GC, we have to explicitly locate them on the stack. And to the
+   runtime function we are passing a reference to their location. */
+const std::vector<std::string> safepoint_functions = {
+    utils::labeled("s__Infix_58"),     utils::labeled("substring"),
+    utils::labeled("clone"),           utils::labeled_builtin("string"),
+    utils::labeled("stringcat"),       utils::labeled("string"),
+    utils::labeled_builtin("closure"), utils::labeled_builtin("array"),
+    utils::labeled_builtin("sexp"),    utils::labeled("i__Infix_4343"),
+    /* "makeArray"; not required as do not have ptr arguments */
+    /* "makeString"; not required as do not have ptr arguments */
+    /* "getEnv", not required as do not have ptr arguments */
+    /* "set_args", not required as do not have ptr arguments */
+    /* Lsprintf, or Bsprintf is an extra dirty hack that probably works */
 };
+
+const std::vector<std::pair<std::string, size_t>> vararg_functions = {
+    {utils::labeled("printf"), 1},
+    {utils::labeled("fprintf"), 2},
+    {utils::labeled("sprintf"), 1},
+    {utils::labeled("failure"), 1},
+};
+
+std::vector<Instr> compile_call(Env<Prg, mode_> &env,
+                                std::optional<std::string_view> fname,
+                                size_t nargs, bool tail) {}
 
 enum class Patt {
   BOXED,
@@ -1430,7 +1468,7 @@ struct SMInstr {
   };
   /* put a constant on the stack               */
   struct CONST {
-    int x;
+    int n;
   };
   /* put a string on the stack                 */
   struct STRING {
@@ -1473,7 +1511,7 @@ struct SMInstr {
   };
   /* unconditional jump                        */
   struct JMP {
-    std::string s;
+    std::string l;
   };
   /* conditional jump                          */
   struct CJMP {
@@ -1494,7 +1532,7 @@ struct SMInstr {
   /* create a closure                          */
   struct CLOSURE {
     std::string name;
-    std::vector<ValT> values;
+    std::vector<ValT> closure;
   };
   /* calls a closure                           */
   struct CALLC {
@@ -1579,9 +1617,247 @@ struct SMInstr {
    Take an environment, a stack machine program, and returns a pair ---
    the updated environment and the list of x86 instructions
 */
-std::vector<Instr>
-compile(cmd, Env &env, const std::vector<std::string> &imports, SMInstr code) {}
+std::vector<Instr> compile(cmd, Env<Prg, mode_> &env,
+                           const std::vector<std::string> &imports,
+                           const SMInstr &instr) {
+  const std::string stack_state = mode_.is_debug ? env.print_stack() : "";
+  if (env.is_barrier()) {
+    return std::visit( //
+        utils::multifunc{
+            //
+            [&env](const SMInstr::LABEL &x) -> std::vector<Instr> {
+              if (env.has_stack(x.s)) {
+                env.drop_barrier();
+                env.retrieve_stack(x.s);
+                return {Label{x.s}};
+              }
+              env.drop_stack();
+              return {};
+            },
+            [&env](const SMInstr::FLABEL &x) -> std::vector<Instr> {
+              env.drop_barrier();
+              return {Label{x.s}};
+            },
+            [](const SMInstr::SLABEL &x) -> std::vector<Instr> {
+              return {Label{x.s}};
+            },
+            [](const auto &) -> std::vector<Instr> { return {}; },
+        },
+        *instr);
+  } else {
+    return std::visit( //
+        utils::multifunc{
+            //
+            [&env](const SMInstr::PUBLIC &x)
+                -> std::vector<Instr> { // NOTE: not required in bytecode
+              env.register_public(x.name);
+              return {};
+            },
+            [&env](const SMInstr::EXTERN &x)
+                -> std::vector<Instr> { // NOTE: not required in bytecode
+              env.register_extern(x.name);
+              return {};
+            },
+            [](const SMInstr::IMPORT &x)
+                -> std::vector<Instr> { // NOTE: not required in bytecode
+              return {};
+            },
+            [&env](const SMInstr::CLOSURE &x) -> std::vector<Instr> {
+              // NOTE: probably will change for bytecode cmd
+              const Externality ext =
+                  env.is_external(x.name) ? Externality::E : Externality::I;
+              const auto address = M{DataKind::F, ext, Addressed::A, x.name};
+              const auto l = env.allocate();
 
-std::vector<Instr> compile(cmd, Env &env,
+              std::vector<Instr> result;
+              result.reserve(x.closure.size());
+              for (const auto &c : x.closure) {
+                const auto cr = env.allocate();
+                std::vector<Instr> mov_result = mov(env.loc(c), cr);
+                result =
+                    utils::concat(std::move(result), std::move(mov_result));
+              }
+              std::reverse(result.begin(), result.end());
+              return utils::concat(
+                  std::move(result), mov(address, l),
+                  compile_call(env, ".closure", 1 + x.closure.size(), false));
+            },
+            [&env](const SMInstr::CONST &x) -> std::vector<Instr> {
+              const auto s = env.allocate();
+              return {Mov{L{box(x.n)}, s}};
+            },
+            [&env](const SMInstr::STRING &x) -> std::vector<Instr> {
+              const auto addr = env.register_string(x.str);
+              const auto l = env.allocate();
+              return utils::concat(mov(addr, l),
+                                   compile_call(env, ".string", 1, false));
+            },
+            [&env](const SMInstr::LDA &x) -> std::vector<Instr> {
+              env.register_variable(x.v);
+              const auto s = env.allocate();
+              const auto s_ = env.allocate();
+              return std::vector<Instr>{Lea{env.loc(x.v), rax}, Mov{rax, s},
+                                        Mov{rax, s_}};
+            },
+            [&env](const SMInstr::LD &x) -> std::vector<Instr> {
+              const auto s = env.allocate();
+              return s.is<S>() || s.is<M>()
+                         ? std::vector<Instr>{Mov{s, rax},
+                                              Mov{rax, env.loc(x.v)}}
+                         : std::vector<Instr>{Mov{s, env.loc(x.v)}};
+            },
+            [&env](const SMInstr::ST &x) -> std::vector<Instr> {
+              env.register_variable(x.v);
+              const auto s = env.peek();
+              return s.is<S>() || s.is<M>()
+                         ? std::vector<Instr>{Mov{s, rax},
+                                              Mov{rax, env.loc(x.v)}}
+                         : std::vector<Instr>{Mov{s, env.loc(x.v)}};
+            },
+            [&env](const SMInstr::STA &x) -> std::vector<Instr> {
+              return compile_call(env, ".sta", 3, false);
+            },
+            [&env](const SMInstr::STI &) -> std::vector<Instr> {
+              const auto v = env.pop();
+              const auto x = env.peek();
+              return x.is<S>() || x.is<M>()
+                         ? std::vector<Instr>{Mov{v, rdx},Mov{x, rax},Mov{rdx, I{0, rax}},Mov{rdx, x},
+                                              }
+                         : std::vector<Instr>{Mov{v, rax}, Mov{rax, I{0, x}}, Mov{rax, x}};
+            },
+            [&env](const SMInstr::BINOP &x) -> std::vector<Instr> {
+              return compile_binop(env, x.opr);
+            },
+            [&env](const SMInstr::LABEL &x) -> std::vector<Instr> {
+              return {Label{x.s}};
+            },
+            [&env](const SMInstr::FLABEL &x) -> std::vector<Instr> {
+              return {Label{x.s}};
+            },
+            [&env](const SMInstr::SLABEL &x) -> std::vector<Instr> {
+              return {Label{x.s}};
+            },
+            [&env](const SMInstr::JMP &x) -> std::vector<Instr> {
+              env.set_stack(x.l);
+              env.set_barrier();
+              return {Jmp{x.l}};
+            },
+            [&env](const SMInstr::CJMP &y) -> std::vector<Instr> {
+              const auto x = env.pop();
+              env.set_stack(y.l);
+              return {Sar1{x}, /*!!!*/ Binop{Opr::CMP, L{0}, x},
+                      CJmp{y.s, y.l}};
+            },
+            [&env](const SMInstr::BEGIN &x) -> std::vector<Instr> {
+              return {}; /* TODO */
+            },
+            [&env](const SMInstr::END &x) -> std::vector<Instr> {
+              return {}; /* TODO */
+            },
+            [&env](const SMInstr::RET &) -> std::vector<Instr> {
+              const auto x = env.peek();
+              return {Mov{x, rax}, Jmp{env.epilogue()}};
+            },
+            [&env](const SMInstr::ELEM &x) -> std::vector<Instr> {
+              return compile_call(env, ".elem", 2, false);
+            },
+            [&env](const SMInstr::CALL &x) -> std::vector<Instr> {
+              return compile_call(env, x.fname, x.n, x.tail); // TODO: call
+            },
+            [&env](const SMInstr::CALLC &x) -> std::vector<Instr> {
+              return compile_call(env, {}, x.n, x.tail); // TODO: closure call
+            },
+            [&env](const SMInstr::SEXP &x) -> std::vector<Instr> {
+              const auto s = env.allocate();
+              auto code = compile_call(env, ".sexp", x.n + 1, false);
+              return utils::concat(mov(L{box(env.hash(x.tag))}, s),
+                                   std::move(code));
+            },
+            [&env](const SMInstr::DROP &x) -> std::vector<Instr> {
+              env.pop();
+              return {};
+            },
+            [&env](const SMInstr::DUP &) -> std::vector<Instr> {
+              const auto x = env.peek();
+              const auto s = env.allocate();
+              return mov(x, s);
+            },
+            [&env](const SMInstr::SWAP &) -> std::vector<Instr> {
+              const auto [x, y] = env.peek2();
+              return {Push{x}, Push{y}, Pop{x}, Pop{y}};
+            },
+            [&env](const SMInstr::TAG &x) -> std::vector<Instr> {
+              const auto s1 = env.allocate();
+              const auto s2 = env.allocate();
+              auto code = compile_call(env, ".tag", 3, false);
+              return utils::concat(mov(L{box(env.hash(x.tag))}, s1),
+                                   mov(L{box(x.n)}, s2), std::move(code));
+            },
+            [&env](const SMInstr::ARRAY &x) -> std::vector<Instr> {
+              const auto s = env.allocate();
+              auto code = compile_call(env, ".array_patt", 2, false);
+              return utils::concat(std::vector<Instr>{Mov{L{box(x.n)}, s}},
+                                   std::move(code));
+            },
+            [&env](const SMInstr::PATT &x) -> std::vector<Instr> {
+              std::string fname;
+              switch (x.patt) {
+              case Patt::STRCMP:
+                return compile_call(env, ".string_patt", 2, false);
+              case Patt::BOXED:
+                fname = ".boxed_patt";
+                break;
+              case Patt::UNBOXED:
+                fname = ".unboxed_patt";
+                break;
+              case Patt::ARRAY:
+                fname = ".array_tag_patt";
+                break;
+              case Patt::STRING:
+                fname = ".string_tag_patt";
+                break;
+              case Patt::SEXP:
+                fname = ".sexp_tag_patt";
+                break;
+              case Patt::CLOSURE:
+                fname = ".closure_tag_patt";
+                break;
+              default:
+                failure("Unexpected pattern %s: %d", __FILE__, __LINE__);
+                break;
+              }
+              return compile_call(env, fname, 1, false);
+            },
+            [&env](const SMInstr::LINE &x) -> std::vector<Instr> {
+              return env.gen_line(x.n);
+            },
+            [&env](const SMInstr::FAIL &x) -> std::vector<Instr> {
+              const auto v = x.val ? env.peek() : env.pop();
+              const auto msg_addr = env.register_string(cmd.get_infile());
+              const auto vr = env.allocate();
+              const auto sr = env.allocate();
+              const auto liner = env.allocate();
+              const auto colr = env.allocate();
+              auto code = compile_call(env, ".match_failure", 4, false);
+              env.pop();
+              return utils::concat(
+                  std::vector<Instr>{
+                      Mov{L{static_cast<int>(x.col)}, colr},
+                      Mov{L{static_cast<int>(x.line)}, liner},
+                      Mov{msg_addr, sr},
+                      Mov{v, vr},
+                  },
+                  std::move(code));
+            },
+            [](const auto &) -> std::vector<Instr> {
+              failure("invalid SM insn\n"); // TODO: better error
+              utils::unreachable();
+            },
+        },
+        *instr);
+  }
+}
+
+std::vector<Instr> compile(cmd, Env<Prg, mode_> &env,
                            const std::vector<std::string> &imports,
                            const std::vector<SMInstr> &code) {}
