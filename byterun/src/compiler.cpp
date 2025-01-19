@@ -1372,4 +1372,216 @@ std::vector<Instr> compile_binop(Env<Prg, mode_> &env, Opr op) {
 
 std::vector<Instr> compile_call(/*env ?fname nargs tail*/) {}
 
-std::vector<Instr> compile(/*cmd env imports code*/) {}
+struct ValT {
+  struct Global {
+    std::string s;
+  };
+  struct Local {
+    int n;
+  };
+  struct Arg {
+    int n;
+  };
+  struct Access {
+    int n;
+  };
+  struct Fun {
+    std::string s;
+  };
+
+  using T = std::variant<Global, Local, Arg, Access, Fun>;
+
+  T val;
+
+  template <typename U>
+    requires(not std::is_same_v<ValT, std::remove_reference_t<U>>)
+  ValT(U &&x) : val(std::forward<U>(x)) {}
+
+  template <typename U> bool is() const {
+    return std::holds_alternative<U>(val);
+  }
+
+  const T &operator*() const { return val; }
+  const T &operator->() const { return val; }
+
+  bool operator==(const ValT &other) const = default;
+};
+
+enum class Patt {
+  BOXED,
+  UNBOXED,
+  ARRAY,
+  STRING,
+  SEXP,
+  CLOSURE,
+  STRCMP,
+};
+
+// TODO
+struct Scope {};
+
+// TODO: use bytecode in interpreter represientation instead
+/* The type for the stack machine instructions */
+struct SMInstr {
+
+  /* binary operator                           */
+  struct BINOP {
+    Opr opr;
+  };
+  /* put a constant on the stack               */
+  struct CONST {
+    int x;
+  };
+  /* put a string on the stack                 */
+  struct STRING {
+    std::string str;
+  };
+  /* create an S-expression                    */
+  struct SEXP {
+    std::string tag;
+    int n;
+  };
+  /* load a variable to the stack              */
+  struct LD {
+    ValT v;
+  };
+  /* load a variable address to the stack      */
+  struct LDA {
+    ValT v;
+  };
+  /* store a value into a variable             */
+  struct ST {
+    ValT v;
+  };
+  /* store a value into a reference            */
+  struct STI {};
+  /* store a value into array/sexp/string      */
+  struct STA {};
+  /* takes an element of array/string/sexp     */
+  struct ELEM {};
+  /* a label                                   */
+  struct LABEL {
+    std::string s;
+  };
+  /* a forwarded label                         */
+  struct FLABEL {
+    std::string s;
+  };
+  /* a scope label                             */
+  struct SLABEL {
+    std::string s;
+  };
+  /* unconditional jump                        */
+  struct JMP {
+    std::string s;
+  };
+  /* conditional jump                          */
+  struct CJMP {
+    std::string s;
+    std::string l;
+  };
+  /* begins procedure definition               */
+  struct BEGIN {
+    std::string f;
+    int nargs;
+    int nlocals;
+    std::vector<ValT> closure;
+    std::vector<std::string> args;
+    std::vector<Scope> scopes;
+  };
+  /* end procedure definition                  */
+  struct END {};
+  /* create a closure                          */
+  struct CLOSURE {
+    std::string name;
+    std::vector<ValT> values;
+  };
+  /* calls a closure                           */
+  struct CALLC {
+    int n;
+    bool tail;
+  };
+  /* calls a function/procedure                */
+  struct CALL {
+    std::string fname;
+    int n;
+    bool tail;
+  };
+  /* returns from a function                   */
+  struct RET {};
+  /* drops the top element off                 */
+  struct DROP {};
+  /* duplicates the top element                */
+  struct DUP {};
+  /* swaps two top elements                    */
+  struct SWAP {};
+  /* checks the tag and arity of S-expression  */
+  struct TAG {
+    std::string tag;
+    int n;
+  };
+  /* checks the tag and size of array          */
+  struct ARRAY {
+    int n;
+  };
+  /* checks various patterns                   */
+  struct PATT {
+    Patt patt;
+  };
+  /* match failure (location, leave a value    */
+  struct FAIL {
+    size_t line;
+    size_t col;
+    bool val;
+  };
+  /* external definition                       */
+  struct EXTERN {
+    std::string name;
+  };
+  /* public   definition                       */
+  struct PUBLIC {
+    std::string name;
+  };
+  /* import clause                             */
+  struct IMPORT {
+    std::string name;
+  };
+  /* line info                                 */
+  struct LINE {
+    int n;
+  };
+
+  using T = std::variant<BINOP, CONST, STRING, SEXP, LD, LDA, ST, STI, STA,
+                         ELEM, LABEL, FLABEL, SLABEL, JMP, CJMP, BEGIN, END,
+                         CLOSURE, CALLC, CALL, RET, DROP, DUP, SWAP, TAG, ARRAY,
+                         PATT, FAIL, EXTERN, PUBLIC, IMPORT, LINE>;
+
+  T val;
+
+  template <typename U>
+    requires(not std::is_same_v<SMInstr, std::remove_reference_t<U>>)
+  SMInstr(U &&x) : val(std::forward<U>(x)) {}
+
+  template <typename U> bool is() const {
+    return std::holds_alternative<U>(val);
+  }
+
+  const T &operator*() const { return val; }
+  const T &operator->() const { return val; }
+
+  bool operator==(const SMInstr &other) const = default;
+};
+
+/* Symbolic stack machine evaluator
+
+     compile : env -> prg -> env * instr list
+
+   Take an environment, a stack machine program, and returns a pair ---
+   the updated environment and the list of x86 instructions
+*/
+std::vector<Instr>
+compile(cmd, Env &env, const std::vector<std::string> &imports, SMInstr code) {}
+
+std::vector<Instr> compile(cmd, Env &env,
+                           const std::vector<std::string> &imports,
+                           const std::vector<SMInstr> &code) {}
