@@ -1,6 +1,9 @@
+#include <functional>
 #include <iostream>
 extern "C" {
 #include "module_manager.h"
+#include "runtime_externs.h"
+#include "stack.h"
 #include "utils.h"
 }
 
@@ -70,6 +73,7 @@ uint32_t path_mod_load(const char *name, std::filesystem::path &&path,
   Bytefile *module = read_file(path.c_str());
   return mod_add_impl(module, do_verification, name);
 }
+
 extern "C" {
 
 void mod_add_search_path(const char *path) {
@@ -143,4 +147,115 @@ ModSearchResult mod_search_pub_symbol(const char *name) {
       .mod_file = mod_get(it->second.mod_id),
   };
 }
+
+struct StdFunc {
+  void (*ptr)();
+  size_t args_count;
+  bool is_args = false; // one var for all args
+  bool is_vararg = false;
+};
+bool run_stdlib_func(const char *name) {
+  static const std::unordered_map<std::string, StdFunc> std_func = {
+      {"Luppercase", {.ptr = (void (*)()) & Luppercase, .args_count = 1}},
+      {"Llowercase", {.ptr = (void (*)()) & Llowercase, .args_count = 1}},
+      {"Lassert",
+       {.ptr = (void (*)()) & Lassert, .args_count = 2, .is_vararg = true}},
+      {"Lstring",
+       {.ptr = (void (*)()) & Lstring, .args_count = 1, .is_args = true}},
+      {"Llength", {.ptr = (void (*)()) & Llength, .args_count = 1}},
+      {"LstringInt", {.ptr = (void (*)()) & LstringInt, .args_count = 1}},
+      {"Lread", {.ptr = (void (*)()) & Lread, .args_count = 0}},
+      {"Lwrite", {.ptr = (void (*)()) & Lwrite, .args_count = 1}},
+      {"LmakeArray", {.ptr = (void (*)()) & LmakeArray, .args_count = 1}},
+      {"LmakeString", {.ptr = (void (*)()) & LmakeString, .args_count = 1}},
+      {"Lstringcat",
+       {.ptr = (void (*)()) & Lstringcat, .args_count = 1, .is_args = true}},
+      {"LmatchSubString",
+       {.ptr = (void (*)()) & LmatchSubString, .args_count = 3}},
+      {"Lsprintf",
+       {.ptr = (void (*)()) & Lsprintf, .args_count = 1, .is_vararg = true}},
+      {"Lsubstring",
+       {.ptr = (void (*)()) & Lsubstring, .args_count = 3, .is_args = true}},
+      {"Li__Infix_4343",
+       {.ptr = (void (*)()) & Li__Infix_4343,
+        .args_count = 2,
+        .is_args = true}}, // ++
+      {"Lclone",
+       {.ptr = (void (*)()) & Lclone, .args_count = 1, .is_args = true}},
+      {"Lhash", {.ptr = (void (*)()) & Lhash, .args_count = 1}},
+      {"LtagHash", {.ptr = (void (*)()) & LtagHash, .args_count = 1}},
+      {"Lcompare", {.ptr = (void (*)()) & Lcompare, .args_count = 2}},
+      {"LflatCompare", {.ptr = (void (*)()) & LflatCompare, .args_count = 2}},
+      {"Lfst", {.ptr = (void (*)()) & Lfst, .args_count = 1}},
+      {"Lsnd", {.ptr = (void (*)()) & Lsnd, .args_count = 1}},
+      {"Lhd", {.ptr = (void (*)()) & Lhd, .args_count = 1}},
+      {"Ltl", {.ptr = (void (*)()) & Ltl, .args_count = 1}},
+      {"LreadLine", {.ptr = (void (*)()) & LreadLine, .args_count = 0}},
+      {"Lprintf",
+       {.ptr = (void (*)()) & Lprintf, .args_count = 1, .is_vararg = true}},
+      {"Lfopen", {.ptr = (void (*)()) & Lfopen, .args_count = 2}},
+      {"Lfclose", {.ptr = (void (*)()) & Lfclose, .args_count = 1}},
+      {"Lfread", {.ptr = (void (*)()) & Lfread, .args_count = 1}},
+      {"Lfwrite", {.ptr = (void (*)()) & Lfwrite, .args_count = 2}},
+      {"Lfexists", {.ptr = (void (*)()) & Lfexists, .args_count = 1}},
+      {"Lfprintf",
+       {.ptr = (void (*)()) & Lfprintf, .args_count = 2, .is_vararg = true}},
+      {"Lregexp", {.ptr = (void (*)()) & Lregexp, .args_count = 1}},
+      {"LregexpMatch", {.ptr = (void (*)()) & LregexpMatch, .args_count = 3}},
+      {"Lfailure",
+       {.ptr = (void (*)()) & Lfailure, .args_count = 1, .is_vararg = true}},
+      {"Lsystem", {.ptr = (void (*)()) & Lsystem, .args_count = 1}},
+      {"LgetEnv", {.ptr = (void (*)()) & LgetEnv, .args_count = 1}},
+      {"Lrandom", {.ptr = (void (*)()) & Lrandom, .args_count = 1}},
+      {"Ltime", {.ptr = (void (*)()) & Ltime, .args_count = 0}},
+  };
+  // some functions do use on args pointer
+
+  const auto it = std_func.find(name);
+
+  if (it == std_func.end()) {
+    return false;
+  }
+
+  // TODO: stack safity check
+  // TODO: add stdlib func stack check to verification step
+
+  // TODO: work with varargs
+  if (it->second.is_vararg) {
+    failure("vararg stdlib functions are not supported yet");
+  }
+
+  if (it->second.is_args) {
+    void *ret = ((void *(*)(aint *))it->second.ptr)((aint *)s_peek());
+    s_popn(it->second.args_count);
+    s_push(ret);
+  } else {
+    // TODO: check if arg order is not reversed
+    switch (it->second.args_count) {
+    case 0: {
+      s_push(((void *(*)())it->second.ptr)());
+    } break;
+    case 1: {
+      void *arg1 = s_pop();
+      s_push(((void *(*)(void *))it->second.ptr)(arg1));
+    } break;
+    case 2: {
+      void *arg1 = s_pop();
+      void *arg2 = s_pop();
+      s_push(((void *(*)(void *, void *))it->second.ptr)(arg1, arg2));
+    } break;
+    case 3: {
+      void *arg1 = s_pop();
+      void *arg2 = s_pop();
+      void *arg3 = s_pop();
+      s_push(((void *(*)(void *, void *, void *))it->second.ptr)(arg1, arg2,
+                                                                 arg3));
+    } break;
+    default:
+      failure("too many std function args (> 3)");
+    }
+  }
+  return true;
 }
+
+} // extern "C"
