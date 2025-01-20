@@ -44,11 +44,11 @@ Bytefile *read_file(const char *fname) {
   Bytefile *file;
 
   if (f == 0) {
-    failure("%s\n", strerror(errno));
+    failure("read file %s: %s\n", fname, strerror(errno));
   }
 
   if (fseek(f, 0, SEEK_END) == -1) {
-    failure("%s\n", strerror(errno));
+    failure("read file %s: %s\n", fname, strerror(errno));
   }
 
   long size = ftell(f);

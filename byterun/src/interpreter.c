@@ -82,13 +82,23 @@ void run_prepare_exec(int argc, char **argv) {
 
 void run_mod_rec(uint mod_id, int argc, char **argv, bool do_verification) {
   Bytefile* mod = mod_get(mod_id);
+#ifdef DEBUG_VERSION
+  printf("- run mod rec, %i imports\n", mod->imports_number);
+#endif
   for (size_t i = 0; i < mod->imports_number; ++i) {
-    if (find_mod_loaded(get_import_safe(mod, i)) < 0 && strcmp(get_import_safe(mod, i), "Std") != 0) { // not loaded
-      int32_t import_mod = mod_load(get_import_safe(mod, i), do_verification);
+    const char* import_str = get_import_safe(mod, i);
+    if (find_mod_loaded(import_str) < 0 && strcmp(import_str, "Std") != 0) { // not loaded
+#ifdef DEBUG_VERSION
+      printf("- mod load <%s>\n", import_str);
+#endif
+      int32_t import_mod = mod_load(import_str, do_verification);
       if (import_mod < 0) {
-        failure("module %s not found\n", get_import_safe(mod, i));
+        failure("module <%s> not found\n", import_str);
       }
-      run_mod_rec(mod_id, argc, argv, do_verification);
+#ifdef DEBUG_VERSION
+      printf("- mod run <%s>\n", import_str);
+#endif
+      run_mod_rec(import_mod, argc, argv, do_verification);
     }
   }
 
@@ -390,7 +400,7 @@ void run_mod(uint mod_id, int argc, char **argv) {
                   s.is_closure_call, args_sz, locals_sz);
 #ifdef WITH_CHECK
         if ((void **)__gc_stack_top + (aint)max_additional_stack_sz - 1 <= s.stack) {
-          s_failure(&s, "stack owerflow");
+          s_failure(&s, "stack overflow");
         }
 #endif
         break;
@@ -498,7 +508,7 @@ void run_mod(uint mod_id, int argc, char **argv) {
 
         struct ModSearchResult func = mod_search_pub_symbol(call_func_name);
         if (func.mod_file == NULL) {
-          failure("RUNTIME:ERROR: external function <%s> with <%zu> args not found\n", call_func_name, args_count);
+          failure("RUNTIME ERROR: external function <%s> with <%zu> args not found\n", call_func_name, args_count);
         }
 
         call_happened = true;

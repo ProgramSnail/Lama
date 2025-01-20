@@ -1,0 +1,3 @@
+import Dep;
+
+public fun g(a, b) { a * b }

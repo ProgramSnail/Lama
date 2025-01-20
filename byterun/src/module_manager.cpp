@@ -45,6 +45,9 @@ uint32_t mod_add_impl(Bytefile *bf, bool do_verification,
   manager.modules.push_back({.name = name ? *name : "", .bf = bf});
   for (size_t i = 0; i < bf->public_symbols_number; ++i) {
     const char *public_name = get_public_name_safe(bf, i);
+#ifdef DEBUG_VERSION
+    std::cerr << "- load public " << public_name << "\n";
+#endif
     size_t public_offset = get_public_offset_safe(bf, i);
     if (strcmp(public_name, "main") == 0) {
       bf->main_offset = public_offset;
