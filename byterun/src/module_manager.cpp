@@ -154,7 +154,7 @@ struct StdFunc {
   bool is_args = false; // one var for all args
   bool is_vararg = false;
 };
-bool run_stdlib_func(const char *name) {
+bool run_stdlib_func(const char *name, size_t args_count) {
   static const std::unordered_map<std::string, StdFunc> std_func = {
       {"Luppercase", {.ptr = (void (*)()) & Luppercase, .args_count = 1}},
       {"Llowercase", {.ptr = (void (*)()) & Llowercase, .args_count = 1}},
@@ -217,8 +217,14 @@ bool run_stdlib_func(const char *name) {
     return false;
   }
 
-  // TODO: stack safity check
-  // TODO: add stdlib func stack check to verification step
+  // TODO: move to bytecode verifier
+  if ((!it->second.is_vararg && it->second.args_count != args_count) ||
+      it->second.args_count > args_count) {
+    failure("RUNTIME ERROR: stdlib function <%s> argument count <%zu> is not "
+            "expected (expected is <%s%zu>)\n",
+            name, it->second.args_count, it->second.is_vararg ? ">=" : "=",
+            args_count);
+  }
 
   // TODO: work with varargs
   if (it->second.is_vararg) {

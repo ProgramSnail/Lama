@@ -99,6 +99,27 @@ void run_mod_rec(uint mod_id, int argc, char **argv, bool do_verification) {
   run_mod(mod_id, argc, argv);
 }
 
+static inline void call_Barray(size_t elem_count, char** ip, void** buffer) {
+    // size_t elem_count = ip_read_int(ip);
+
+    void **opr_buffer = (void**)(elem_count > BUFFER_SIZE
+                            ? alloc(elem_count * sizeof(void *))
+                            : buffer);
+    for (size_t i = 0; i < elem_count; ++i) {
+      opr_buffer[elem_count - i - 1] = s_pop();
+    }
+
+    // s_rotate_n(elem_count);
+
+    // NOTE: not sure if elems should be added
+    void *array =
+        Barray((aint *)opr_buffer,
+               BOX(elem_count)); 
+
+    // void *array = Barray((aint *)s_peek(), BOX(elem_count));
+    s_push(array);
+}
+
 void run_mod(uint mod_id, int argc, char **argv) {
 #ifdef DEBUG_VERSION
   printf("--- module init state ---\n");
@@ -463,11 +484,21 @@ void run_mod(uint mod_id, int argc, char **argv) {
 
       case CMD_CTRL_CALLF: { // CALLF %s %d // call external function
         const char *call_func_name = ip_read_string(&s.ip);
-        ip_read_int(&s.ip); // args count
+        size_t args_count = ip_read_int(&s.ip); // args count
+
+        if (run_stdlib_func(call_func_name, args_count)) {
+          // case of stdlib function
+          break;
+        }
+
+        if (strcmp(call_func_name, ".array") == 0) {
+          call_Barray(args_count, &s.ip, buffer);
+          break;
+        }
 
         struct ModSearchResult func = mod_search_pub_symbol(call_func_name);
         if (func.mod_file == NULL) {
-          s_failure(&s, "external function not found");
+          failure("RUNTIME:ERROR: external function <%s> with <%zu> args not found\n", call_func_name, args_count);
         }
 
         call_happened = true;
@@ -519,52 +550,53 @@ void run_mod(uint mod_id, int argc, char **argv) {
       }
       break;
 
-    case CMD_BUILTIN: {
-      switch (l) {
-      case CMD_BUILTIN_Lread: // CALL Lread
-        s_push_i(Lread());
-        break;
+    // NOTE: no longer used
+    // case CMD_BUILTIN: {
+    //   switch (l) {
+    //   case CMD_BUILTIN_Lread: // CALL Lread
+    //     s_push_i(Lread());
+    //     break;
 
-      case CMD_BUILTIN_Lwrite: // CALL Lwrite
-        Lwrite(*s_peek_i());
-        break;
+    //   case CMD_BUILTIN_Lwrite: // CALL Lwrite
+    //     Lwrite(*s_peek_i());
+    //     break;
 
-      case CMD_BUILTIN_Llength: // CALL Llength
-        s_push_i(Llength(s_pop()));
-        break;
+    //   case CMD_BUILTIN_Llength: // CALL Llength
+    //     s_push_i(Llength(s_pop()));
+    //     break;
 
-      case CMD_BUILTIN_Lstring: { // CALL Lstring
-        void *val = s_pop();
-        void *str = Lstring((aint *)&val);
-        s_push(str);
-        break;
-      }
+    //   case CMD_BUILTIN_Lstring: { // CALL Lstring
+    //     void *val = s_pop();
+    //     void *str = Lstring((aint *)&val);
+    //     s_push(str);
+    //     break;
+    //   }
 
-      case CMD_BUILTIN_Barray: { // CALL Barray %d
-        size_t elem_count = ip_read_int(&s.ip);
+    //   case CMD_BUILTIN_Barray: { // CALL Barray %d
+    //     size_t elem_count = ip_read_int(&s.ip);
 
-        void **opr_buffer = (void**)(elem_count > BUFFER_SIZE
-                                ? alloc(elem_count * sizeof(void *))
-                                : buffer);
-        for (size_t i = 0; i < elem_count; ++i) {
-          opr_buffer[elem_count - i - 1] = s_pop();
-        }
+    //     void **opr_buffer = (void**)(elem_count > BUFFER_SIZE
+    //                             ? alloc(elem_count * sizeof(void *))
+    //                             : buffer);
+    //     for (size_t i = 0; i < elem_count; ++i) {
+    //       opr_buffer[elem_count - i - 1] = s_pop();
+    //     }
 
-        // s_rotate_n(elem_count);
-        void *array =
-            Barray((aint *)opr_buffer,
-                   BOX(elem_count)); // NOTE: not sure if elems should be
-                                     // added
+    //     // s_rotate_n(elem_count);
+    //     void *array =
+    //         Barray((aint *)opr_buffer,
+    //                BOX(elem_count)); // NOTE: not sure if elems should be
+    //                                  // added
 
-        // void *array = Barray((aint *)s_peek(), BOX(elem_count));
-        s_push(array);
-        break;
-      }
+    //     // void *array = Barray((aint *)s_peek(), BOX(elem_count));
+    //     s_push(array);
+    //     break;
+    //   }
 
-      default:
-        s_failure(&s, "invalid opcode"); // %d-%d\n", h, l);
-      }
-    } break;
+    //   default:
+    //     s_failure(&s, "invalid opcode"); // %d-%d\n", h, l);
+    //   }
+    // } break;
 
     default:
       s_failure(&s, "invalid opcode"); // %d-%d\n", h, l);

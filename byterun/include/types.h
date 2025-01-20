@@ -117,7 +117,7 @@ enum CMD_TOPLVL {
   CMD_ST,
   CMD_CTRL,
   CMD_PATT,
-  CMD_BUILTIN,
+  // CMD_BUILTIN, // NOTE: no longer used
   CMD_EXIT = 15,
 };
 
@@ -177,10 +177,10 @@ enum CMD_PATTS {
   CMD_PATT_FUN_TAG,
 };
 
-enum CMD_BUILTINS {
-  CMD_BUILTIN_Lread = 0,
-  CMD_BUILTIN_Lwrite,
-  CMD_BUILTIN_Llength,
-  CMD_BUILTIN_Lstring,
-  CMD_BUILTIN_Barray,
-};
+// enum CMD_BUILTINS { // NOTE: no longer used
+//   CMD_BUILTIN_Lread = 0,
+//   CMD_BUILTIN_Lwrite,
+//   CMD_BUILTIN_Llength,
+//   CMD_BUILTIN_Lstring,
+//   CMD_BUILTIN_Barray,
+// };

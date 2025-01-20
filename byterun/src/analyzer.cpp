@@ -324,7 +324,7 @@ void analyze(uint32_t mod_id) {
       break;
     case Cmd::CALLF: {
       // TODO: find link to real function and replace call (need to save all
-      // modules in one space)
+      // modules in one space) <- optimization
 
       ip_read_int_unsafe(&current_ip); // function name (str)
       uint args_count = ip_read_int_unsafe(&current_ip);
@@ -344,23 +344,24 @@ void analyze(uint32_t mod_id) {
       }
       ++current_stack_depth;
       break;
-    case Cmd::Lread:
-      ++current_stack_depth;
-      break;
-    case Cmd::Lwrite:
-    case Cmd::Llength:
-    case Cmd::Lstring:
-      if (current_stack_depth < 1) {
-        ip_failure(saved_current_ip, mod_id, "not enough elements in stack");
-      }
-      break;
-    case Cmd::Barray:
-      current_stack_depth -= ip_read_int_unsafe(&current_ip); // elem count
-      if (current_stack_depth < 0) {
-        ip_failure(saved_current_ip, mod_id, "not enough elements in stack");
-      }
-      ++current_stack_depth;
-      break;
+    // NOTE: no longer used
+    // case Cmd::Lread:
+    //   ++current_stack_depth;
+    //   break;
+    // case Cmd::Lwrite:
+    // case Cmd::Llength:
+    // case Cmd::Lstring:
+    //   if (current_stack_depth < 1) {
+    //     ip_failure(saved_current_ip, mod_id, "not enough elements in stack");
+    //   }
+    //   break;
+    // case Cmd::Barray:
+    //   current_stack_depth -= ip_read_int_unsafe(&current_ip); // elem count
+    //   if (current_stack_depth < 0) {
+    //     ip_failure(saved_current_ip, mod_id, "not enough elements in stack");
+    //   }
+    //   ++current_stack_depth;
+    //   break;
     case Cmd::EXIT:
       ip_failure(saved_current_ip, mod_id,
                  "exit should be unreachable"); // NOTE: not sure

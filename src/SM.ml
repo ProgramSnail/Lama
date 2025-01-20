@@ -275,17 +275,17 @@ module ByteCode = struct
           add_fixup s;
           add_ints [ 0 ]
       (* 0x70                 *)
-      | CALL (f, _, _) when f = labeled "read" -> add_bytes [ (7 * 16) + 0 ]
+      (* | CALL (f, _, _) when f = labeled "read" -> add_bytes [ (7 * 16) + 0 ] *)
       (* 0x71                 *)
-      | CALL (f, _, _) when f = labeled "write" -> add_bytes [ (7 * 16) + 1 ]
+      (* | CALL (f, _, _) when f = labeled "write" -> add_bytes [ (7 * 16) + 1 ] *)
       (* 0x72                 *)
-      | CALL (f, _, _) when f = labeled "length" -> add_bytes [ (7 * 16) + 2 ]
+      (* | CALL (f, _, _) when f = labeled "length" -> add_bytes [ (7 * 16) + 2 ] *)
       (* 0x73                 *)
-      | CALL (f, _, _) when f = labeled "string" -> add_bytes [ (7 * 16) + 3 ]
+      (* | CALL (f, _, _) when f = labeled "string" -> add_bytes [ (7 * 16) + 3 ] *)
       (* 0x74                 *)
-      | CALL (".array", n, _) ->
-          add_bytes [ (7 * 16) + 4 ];
-          add_ints [ n ]
+      (* | CALL (".array", n, _) -> *)
+          (* add_bytes [ (7 * 16) + 4 ]; *)
+          (* add_ints [ n ] *)
       (* 0x52 n:32 n:32       *)
       | BEGIN (_, a, l, [], _, _) ->
           add_bytes [ (5 * 16) + 2 ];

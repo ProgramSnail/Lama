@@ -219,16 +219,17 @@ const char *command_name(Cmd cmd, int8_t l) {
       return "_UNDEF_PATT_";
     }
     return pats[l];
-  case Cmd::Lread:
-    return "CALL\tLread";
-  case Cmd::Lwrite:
-    return "CALL\tLwrite";
-  case Cmd::Llength:
-    return "CALL\tLlength";
-  case Cmd::Lstring:
-    return "CALL\tLstring";
-  case Cmd::Barray:
-    return "CALL\tBarray\t%d";
+  // NOTE: no longer used
+  // case Cmd::Lread:
+  //   return "CALL\tLread";
+  // case Cmd::Lwrite:
+  //   return "CALL\tLwrite";
+  // case Cmd::Llength:
+  //   return "CALL\tLlength";
+  // case Cmd::Lstring:
+  //   return "CALL\tLstring";
+  // case Cmd::Barray:
+  //   return "CALL\tBarray\t%d";
   case Cmd::_UNDEF_:
     return "_UNDEF_";
   }
@@ -552,35 +553,37 @@ std::pair<Cmd, uint8_t> parse_command_impl(char **ip, const Bytefile &bf,
     read_print_cmd_seq_opt<do_read_args, use_out>(cmd, l, ip, bf, out);
     break;
 
-  case CMD_BUILTIN: {
-    switch (l) {
-    case CMD_BUILTIN_Lread: // CALL Lread
-      cmd = Cmd::Lread;
-      read_print_cmd_seq_opt<do_read_args, use_out>(cmd, l, ip, bf, out);
-      break;
-    case CMD_BUILTIN_Lwrite: // CALL Lwrite
-      cmd = Cmd::Lwrite;
-      read_print_cmd_seq_opt<do_read_args, use_out>(cmd, l, ip, bf, out);
-      break;
-    case CMD_BUILTIN_Llength: // CALL Llength
-      cmd = Cmd::Llength;
-      read_print_cmd_seq_opt<do_read_args, use_out>(cmd, l, ip, bf, out);
-      break;
-    case CMD_BUILTIN_Lstring: // CALL Lstring
-      cmd = Cmd::Lstring;
-      read_print_cmd_seq_opt<do_read_args, use_out>(cmd, l, ip, bf, out);
-      break;
+    // NOTE: no longer used
+    // case CMD_BUILTIN: {
+    //   switch (l) {
+    //   case CMD_BUILTIN_Lread: // CALL Lread
+    //     cmd = Cmd::Lread;
+    //     read_print_cmd_seq_opt<do_read_args, use_out>(cmd, l, ip, bf, out);
+    //     break;
+    //   case CMD_BUILTIN_Lwrite: // CALL Lwrite
+    //     cmd = Cmd::Lwrite;
+    //     read_print_cmd_seq_opt<do_read_args, use_out>(cmd, l, ip, bf, out);
+    //     break;
+    //   case CMD_BUILTIN_Llength: // CALL Llength
+    //     cmd = Cmd::Llength;
+    //     read_print_cmd_seq_opt<do_read_args, use_out>(cmd, l, ip, bf, out);
+    //     break;
+    //   case CMD_BUILTIN_Lstring: // CALL Lstring
+    //     cmd = Cmd::Lstring;
+    //     read_print_cmd_seq_opt<do_read_args, use_out>(cmd, l, ip, bf, out);
+    //     break;
 
-    case CMD_BUILTIN_Barray: // CALL Barray %d
-      cmd = Cmd::Barray;
-      read_print_cmd_seq_opt<do_read_args, use_out, ArgT::INT>(cmd, l, ip, bf,
-                                                               out);
-      break;
+    //   case CMD_BUILTIN_Barray: // CALL Barray %d
+    //     cmd = Cmd::Barray;
+    //     read_print_cmd_seq_opt<do_read_args, use_out, ArgT::INT>(cmd, l, ip,
+    //     bf,
+    //                                                              out);
+    //     break;
 
-    default:
-      failure("invalid opcode");
-    }
-  } break;
+    //   default:
+    //     failure("invalid opcode");
+    //   }
+    // } break;
 
   default:
     failure("invalid opcode");

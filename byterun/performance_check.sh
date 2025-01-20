@@ -34,4 +34,3 @@ time ./byterun.exe -i Sort.bc > /dev/null
 
 rm Sort.*
 rm *.o
-rm *.a

@@ -37,11 +37,12 @@ enum class Cmd : int8_t {
   LINE,
   CALLF,
   PATT,
-  Lread,
-  Lwrite,
-  Llength,
-  Lstring,
-  Barray,
+  // NOTE: no longer used
+  // Lread,
+  // Lwrite,
+  // Llength,
+  // Lstring,
+  // Barray,
   EXIT,
   _UNDEF_,
 };

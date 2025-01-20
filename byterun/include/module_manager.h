@@ -24,3 +24,5 @@ int32_t mod_load(const char *name, bool do_verification); // < 0 => not found
 uint32_t mod_add(Bytefile *module, bool do_verification);
 
 struct ModSearchResult mod_search_pub_symbol(const char *name);
+
+bool run_stdlib_func(const char *name, size_t args_count);
