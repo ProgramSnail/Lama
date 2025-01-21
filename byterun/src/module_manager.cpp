@@ -79,6 +79,12 @@ uint32_t path_mod_load(const char *name, std::filesystem::path &&path,
 
 extern "C" {
 
+void mod_cleanup() {
+  for (auto &mod : manager.modules) {
+    free(mod.bf);
+  }
+}
+
 void mod_add_search_path(const char *path) {
   manager.search_paths.emplace_back(path);
 }

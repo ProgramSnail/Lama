@@ -11,6 +11,8 @@ struct ModSearchResult {
   Bytefile *mod_file; // = NULL => not found
 };
 
+void mod_cleanup();
+
 void mod_add_search_path(const char *path);
 
 const char *mod_get_name(uint32_t id);

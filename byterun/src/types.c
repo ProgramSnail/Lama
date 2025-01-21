@@ -15,20 +15,19 @@ void init_state(struct State* s, void** stack) {
   __init();
 
   s->stack = stack;
+  s->fp = NULL;
   s->bf = NULL;
+  s->current_line = 0;
   s->is_closure_call = false;
   s->current_module_id = 0;
   s->call_module_id = 0;
   s->ip = NULL; //s->bf->code_ptr;
   s->instr_ip = NULL; //s->bf->code_ptr;
   s->call_ip = NULL;
-  s->current_line = 0;
 
   for (size_t i = 0; i < STACK_SIZE; ++i) {
     s->stack[i] = NULL;
   }
-
-  s->fp = NULL;
 
   __gc_stack_bottom = (size_t)(s->stack + STACK_SIZE);
   __gc_stack_top = __gc_stack_bottom;

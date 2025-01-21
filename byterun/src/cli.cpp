@@ -52,6 +52,7 @@ int main(int argc, char **argv) {
 #endif
 
     print_file(*f, std::cout);
+    free(f);
   }
   if (do_verification || do_interpretation) {
 #ifdef DEBUG_VERSION
@@ -75,6 +76,8 @@ int main(int argc, char **argv) {
       run_mod_rec(main_mod_id, argc - 2, argv + 2, do_verification);
     }
   }
+
+  mod_cleanup();
 
   return 0;
 }

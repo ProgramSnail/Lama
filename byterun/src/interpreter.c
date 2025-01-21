@@ -107,14 +107,26 @@ void run_mod_rec(uint mod_id, int argc, char **argv, bool do_verification) {
 
   run_prepare_exec(argc, argv); // args for module main
   run_mod(mod_id, argc, argv);
+
+  cleanup_state(&s);
 }
 
 static inline void call_Barray(size_t elem_count, char** ip, void** buffer) {
     // size_t elem_count = ip_read_int(ip);
 
-    void **opr_buffer = (void**)(elem_count > BUFFER_SIZE
+    bool use_new_buffer = (elem_count > BUFFER_SIZE);
+
+    void **opr_buffer = (void**)(use_new_buffer
                             ? alloc(elem_count * sizeof(void *))
                             : buffer);
+
+    if (use_new_buffer) {
+      for (size_t i = 0; i < elem_count; ++i) {
+        opr_buffer[i] = 0;
+        push_extra_root(&opr_buffer[i]);
+      }
+    }
+
     for (size_t i = 0; i < elem_count; ++i) {
       opr_buffer[elem_count - i - 1] = s_pop();
     }
@@ -128,6 +140,13 @@ static inline void call_Barray(size_t elem_count, char** ip, void** buffer) {
 
     // void *array = Barray((aint *)s_peek(), BOX(elem_count));
     s_push(array);
+
+    if (use_new_buffer) {
+      for (size_t i = 0; i < elem_count; ++i) {
+        pop_extra_root(&opr_buffer[i]);
+      }
+      free(opr_buffer);
+    }
 }
 
 void run_mod(uint mod_id, int argc, char **argv) {
@@ -218,9 +237,18 @@ void run_mod(uint mod_id, int argc, char **argv) {
                args_count);
 #endif
 
-        void **opr_buffer = (void**)(args_count >= BUFFER_SIZE
+        bool use_new_buffer = (args_count >= BUFFER_SIZE);
+
+        void **opr_buffer = (void**)(use_new_buffer
                                 ? alloc((args_count + 1) * sizeof(void *))
                                 : buffer);
+
+        if (use_new_buffer) {
+          for (size_t i = 0; i <= args_count; ++i) {
+            opr_buffer[i] = 0;
+            push_extra_root(&opr_buffer[i]);
+          }
+        }
 
         // s_put_nth(args_count, (void *)LtagHash((char *)name));
 
@@ -234,6 +262,13 @@ void run_mod(uint mod_id, int argc, char **argv) {
         // s_popn(args_count + 1);
 
         s_push(sexp);
+
+        if (use_new_buffer) {
+          for (size_t i = 0; i <= args_count; ++i) {
+            pop_extra_root(&opr_buffer[i]);
+          }
+          free(opr_buffer);
+        }
         break;
       }
 
