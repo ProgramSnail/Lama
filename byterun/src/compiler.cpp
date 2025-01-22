@@ -2087,8 +2087,47 @@ std::vector<Instr> compile(const Options &cmd, Env &env,
             [&env](const SMInstr::BEGIN &x) -> std::vector<Instr> {
               return {}; /* TODO */
             },
-            [&env](const SMInstr::END &x) -> std::vector<Instr> {
-              return {}; /* TODO */
+            [&env](const SMInstr::END &y) -> std::vector<Instr> {
+              const auto x = env.pop();
+              env.assert_empty_stack();
+              const auto &name = env.fname;
+              std::optional<Instr> stabs =
+                  env.do_opt_stabs()
+                      ? Meta{std::format("\t.size {}, .-{}", name, name)}
+                      : std::optional<Instr>{};
+
+              std::vector<Instr> result = utils::concat(
+                  std::vector<Instr>{
+                      Mov{x, rax},
+                      /*!!*/
+                      Label{env.epilogue()},
+                      Mov{rbp, rsp},
+                      Pop{rbp},
+                  },
+                  std::optional<Instr>{name == "main"
+                                           ? Binop{Opr::XOR, rax, rax}
+                                           : std::optional<Instr>{}},
+                  std::vector<Instr>{
+                      Meta{"\t.cfi_restore\t5"},
+                      Meta{"\t.cfi_def_cfa\t4, 4"},
+                      Ret{},
+                      Meta{"\t.cfi_endproc"},
+                      Meta{
+                          /* Allocate space for the symbolic stack
+                             Add extra word if needed to preserve alignment */
+                          std::format(
+                              "\t.set\t{},\t{}", env.prefixed(env.lsize()),
+                              (env.get_allocated() % 2 == 0
+                                   ? (env.get_allocated() * word_size)
+                                   : ((env.get_allocated() + 1) * word_size)))},
+                      Meta{std::format("\t.set\t{},\t{}",
+                                       env.prefixed(env.get_allocated_size()),
+                                       env.get_allocated())},
+                  },
+                  std::move(stabs));
+
+              env.leave();
+              return std::move(result);
             },
             [&env](const SMInstr::RET &) -> std::vector<Instr> {
               const auto x = env.peek();
