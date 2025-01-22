@@ -120,6 +120,10 @@ enum class OS { // TODO: other oses
   DARWIN,
 };
 
+struct Options {
+  std::string filename;
+};
+
 struct CompilationMode {
   bool is_debug;
   OS os;
@@ -804,8 +808,11 @@ struct Mode {
   OS target_os;
 };
 
+// FIXME: TODO: find out what is Prg
+using Prg = std::string;
+
 // TODO: rebuild in c++ way
-template <typename Prg, Mode mode> struct Env : public Indexer<Prg> {
+struct Env : public Indexer<Prg> {
 private:
   const std::string chars =
       "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'";
@@ -820,7 +827,8 @@ private:
   size_t stack_slots = 0;    /* maximal number of stack positions */
   size_t static_size = 0;    /* static data size */
   SymbolicStack::T stack = SymbolicStack::empty(0); /* symbolic stack */
-  std::vector<std::string> locals; /* function local variables */
+  std::vector<std::vector<std::string>> locals;
+  /* function local variables */   // TODO: never used (?)
   MapS<SymbolicStack::T> stackmap; /* labels to stack map */
   bool barrier = false;            /* barrier condition */
 
@@ -838,7 +846,11 @@ public:
 
   size_t nargs = 0; /* number of function arguments */
 
+  Mode mode;
+
 public:
+  Env(Mode mode) : mode(std::move(mode)) {}
+
   void register_public(std::string name) { publics.insert(std::move(name)); }
   void register_extern(std::string name) { externs.insert(std::move(name)); }
 
@@ -848,30 +860,38 @@ public:
     }
   }
 
+  // TODO: add SymbolicStack functions to opimize
   std::string print_stack() const {
     std::stringstream result;
-    // TODO
-    // let rec show stack acc =
-    //   if SymbolicStack.is_empty stack then acc
-    //   else
-    //     let stack, loc = SymbolicStack.pop stack in
-    //     show stack (show_opnd loc ^ " " ^ acc)
-    // in
-    // show stack ""
+    SymbolicStack::T stack_copy = stack;
+
+    std::vector<std::string> elements;
+    while (!SymbolicStack::is_empty(stack_copy)) {
+      auto result = SymbolicStack::pop(std::move(stack_copy));
+      stack_copy = std::move(result.first);
+      elements.push_back(to_string(result.second));
+    }
+    std::reverse(elements.begin(), elements.end());
+    for (const auto &element : elements) {
+      result << element << " ";
+    }
     return result.str();
   }
 
   std::string print_locals() const {
     std::stringstream result;
     // TODO
-    // Printf.printf "LOCALS: size = %d\n" static_size;
-    // List.iter
-    //   (fun l ->
-    //     Printf.printf "(";
-    //     List.iter (fun (a, i) -> Printf.printf "%s=%d " a i) l;
-    //     Printf.printf ")\n")
-    //   locals;
-    // Printf.printf "END LOCALS\n"
+    result << std::format("LOCALS: size = {}\n", static_size);
+    for (const auto &l : locals) {
+      result << "(";
+      // NOTE: same to List.iter (fun (a, i) -> Printf.printf "%s=%d " a i) l;
+      for (size_t i = 0; i < l.size(); ++i) {
+        result << std::format("{}={} ", l[i],
+                              i); // TODO: exact format of locals
+      }
+      result << ")\n";
+    }
+    result << "END LOCALS\n";
     return result.str();
   }
 
@@ -882,10 +902,10 @@ public:
   bool is_barrier() { return barrier; }
 
   /* set barrier */
-  bool set_barrier() { barrier = true; }
+  void set_barrier() { barrier = true; }
 
   /* drop barrier */
-  bool drop_barrier() { barrier = false; }
+  void drop_barrier() { barrier = false; }
 
   /* drop stack */
   void drop_stack() { stack = SymbolicStack::empty(static_size); }
@@ -911,20 +931,30 @@ public:
 
   /* gets a location for a variable */
   Opnd loc(const ValT &x) {
-    // TODO
-    // match x with
-    // | Value.Global name ->
-    //     let loc_name = labeled_global name in
-    //     let ext = if self#is_external name then E else I in
-    //     M (D, ext, V, loc_name)
-    // | Value.Fun name ->
-    //     let ext = if self#is_external name then E else I in
-    //     M (F, ext, A, name)
-    // | Value.Local i -> S i
-    // | Value.Arg i when i < argument_registers_size ->
-    // argument_registers.(i) | Value.Arg i -> S (-(i -
-    // argument_registers_size) - 1) | Value.Access i -> I (word_size * (i +
-    // 1), r15);
+    return std::visit(
+        utils::multifunc{
+            [this](const ValT::Global &x) -> Opnd {
+              auto loc_name = utils::labeled_global(x.s);
+              const auto ext =
+                  is_external(x.s) ? Externality::E : Externality::I;
+              return M{DataKind::D, ext, Addressed::V, std::move(loc_name)};
+            },
+            [this](const ValT::Fun &x) -> Opnd {
+              const auto ext =
+                  is_external(x.s) ? Externality::E : Externality::I;
+              return M{DataKind::F, ext, Addressed::A, x.s};
+            },
+            [](const ValT::Local &x) -> Opnd { return S{x.n}; },
+            [this](const ValT::Arg &x) -> Opnd {
+              return x.n < argument_registers_size
+                         ? Opnd{argument_registers[x.n]}
+                         : S{-(x.n - argument_registers_size) - 1};
+            },
+            [](const ValT::Access &x) -> Opnd {
+              return I{static_cast<int>(word_size * (x.n + 1)), r15};
+            },
+        },
+        *x);
   }
 
   /* allocates a fresh position on a symbolic stack */
@@ -949,15 +979,31 @@ public:
   std::pair<std::vector<SymbolicStack::SymbolicLocation>, size_t>
   arguments_locations(size_t n) {
     // TODO
-    // if n < argument_registers_size then
-    //   ( Array.to_list (Array.sub argument_registers 0 n)
-    //     |> List.map (fun r -> Register r),
-    //     0 )
-    // else
-    //   ( (Array.to_list argument_registers |> List.map (fun r -> Register
-    //   r))
-    //     @ List.init (n - argument_registers_size) (fun _ -> Stack),
-    //     n - argument_registers_size )
+
+    using SymbolicLocation = SymbolicStack::SymbolicLocation;
+    using Register = SymbolicStack::Register;
+    using Stack = SymbolicStack::Stack;
+
+    if (n < argument_registers_size) {
+      std::vector<::Register::T> result;
+      result.insert(result.end(), argument_registers.begin(),
+                    argument_registers.begin() + n);
+      return {
+          utils::transform<::Register::T, SymbolicLocation>(
+              std::move(result),
+              [](const auto &r) -> SymbolicLocation { return {Register{r}}; }),
+          0};
+    } else {
+      return {utils::concat( //
+                  utils::transform<::Register::T, SymbolicLocation>(
+                      std::move(argument_registers),
+                      [](const auto &r) -> SymbolicLocation {
+                        return {Register{r}};
+                      }),
+                  std::vector<SymbolicLocation>(n - argument_registers_size,
+                                                {Stack{}})),
+              n - argument_registers_size};
+    }
   }
 
   /* peeks the top of the stack (the stack does not change) */
@@ -1033,9 +1079,6 @@ public:
     //     (M (D, I, A, name), {<scount = scount + 1; stringm = m>})
   }
 
-  /* gets number of arguments in the current function */
-  // method nargs = nargs
-
   /* gets all global variables */
   std::vector<std::string> get_globals() const {
     std::vector<std::string> result;
@@ -1049,7 +1092,15 @@ public:
   }
 
   /* gets all string definitions */
-  SetS get_strings() const { /*M.bindings stringm*/ }
+  SetS get_strings() const {
+    SetS result;
+    result.reserve(stringm.size());
+    for (const auto &str : stringm) {
+      result.insert(
+          str.first); // TODO: M.bindings -> take first elem argument (?)
+    }
+    return result;
+  }
 
   /* gets a number of stack positions allocated */
   size_t get_allocated() const { return stack_slots; }
@@ -1129,11 +1180,7 @@ public:
 
 int stack_offset(int i) { return (i >= 0 ? (i + 1) : (-i + 1)) * word_size; }
 
-// template <typename Prg, Mode mode>
-// FIXME: testing
-using Prg = int;
-constexpr Mode mode_ = {};
-std::string to_code(const Env<Prg, mode_> &env, const Opnd &opnd) {
+std::string to_code(const Env &env, const Opnd &opnd) {
   return std::visit(
       utils::multifunc{
           [](const Opnd::R &x) { return to_string(x.reg); },
@@ -1170,7 +1217,7 @@ std::string to_code(const Env<Prg, mode_> &env, const Opnd &opnd) {
 
 // template <typename Prg, Mode mode>
 // FIXME: testing
-std::string to_code(const Env<Prg, mode_> &env, const Instr &instr) {
+std::string to_code(const Env &env, const Instr &instr) {
   const auto opnd_to_code = [&env](const Opnd &opnd) -> std::string {
     return to_code(env, opnd);
   };
@@ -1298,7 +1345,7 @@ int box(int n) { return (n << 1) | 1; }
   compile_binop : env -> string -> env * instr list
  */
 // template <typename Prg, Mode mode>
-std::vector<Instr> compile_binop(Env<Prg, mode_> &env, Opr op) {
+std::vector<Instr> compile_binop(Env &env, Opr op) {
   const auto suffix = [](Opr op) {
     const static std::unordered_map<Opr, std::string> ops = {
         {Opr::LT, "l"},   {Opr::LEQ, "le"}, {Opr::EQ, "e"},
@@ -1465,9 +1512,9 @@ std::vector<Instr> compile_binop(Env<Prg, mode_> &env, Opr op) {
 }
 
 /* For pointers to be marked by GC as alive they have to be located on the
-   stack. As we do not have control where does the C compiler locate them in the
-   moment of GC, we have to explicitly locate them on the stack. And to the
-   runtime function we are passing a reference to their location. */
+   stack. As we do not have control where does the C compiler locate them in
+   the moment of GC, we have to explicitly locate them on the stack. And to
+   the runtime function we are passing a reference to their location. */
 const std::unordered_set<std::string> safepoint_functions = {
     utils::labeled("s__Infix_58"),     utils::labeled("substring"),
     utils::labeled("clone"),           utils::labeled_builtin("string"),
@@ -1491,8 +1538,7 @@ const std::unordered_map<std::string, size_t> vararg_functions = {
 namespace utils::call_compilation::tail {
 
 // NOTE: all comands in result are in inversed order
-void push_args_rec_inv(Env<Prg, mode_> &env, std::vector<Instr> &acc,
-                       size_t n) {
+void push_args_rec_inv(Env &env, std::vector<Instr> &acc, size_t n) {
   if (n == 0) {
     return;
   }
@@ -1500,7 +1546,7 @@ void push_args_rec_inv(Env<Prg, mode_> &env, std::vector<Instr> &acc,
   utils::insert(acc, utils::reverse(mov(x, env.loc(ValT::Arg{n - 1}))));
   push_args_rec_inv(env, acc, n - 1);
 }
-std::vector<Instr> push_args(Env<Prg, mode_> &env, size_t n) {
+std::vector<Instr> push_args(Env &env, size_t n) {
   std::vector<Instr> acc;
   push_args_rec_inv(env, acc, n);
   std::reverse(acc.begin(), acc.end());
@@ -1508,7 +1554,7 @@ std::vector<Instr> push_args(Env<Prg, mode_> &env, size_t n) {
 }
 
 } // namespace utils::call_compilation::tail
-std::vector<Instr> compile_tail_call(Env<Prg, mode_> &env,
+std::vector<Instr> compile_tail_call(Env &env,
                                      const std::optional<std::string> &fname,
                                      size_t nargs) {
   using namespace utils::call_compilation::tail;
@@ -1532,7 +1578,7 @@ std::vector<Instr> compile_tail_call(Env<Prg, mode_> &env,
 
 namespace utils::call_compilation {
 
-std::vector<Opnd> pop_arguments(Env<Prg, mode_> &env, size_t n) {
+std::vector<Opnd> pop_arguments(Env &env, size_t n) {
   std::vector<Opnd> result;
   result.reserve(n);
   for (size_t i = 0; i < n; ++i) {
@@ -1545,8 +1591,7 @@ std::vector<Opnd> pop_arguments(Env<Prg, mode_> &env, size_t n) {
 
 namespace common {
 
-std::pair<size_t, std::vector<Instr>> setup_arguments(Env<Prg, mode_> &env,
-                                                      size_t nargs) {
+std::pair<size_t, std::vector<Instr>> setup_arguments(Env &env, size_t nargs) {
   const auto move_arguments =
       [](std::vector<Opnd> &&args,
          std::vector<SymbolicStack::SymbolicLocation> &&arg_locs) {
@@ -1573,7 +1618,7 @@ std::pair<size_t, std::vector<Instr>> setup_arguments(Env<Prg, mode_> &env,
   return {stack_slots, std::move(setup_args_code)};
 }
 
-std::optional<Instr> setup_closure(Env<Prg, mode_> &env,
+std::optional<Instr> setup_closure(Env &env,
                                    const std::optional<std::string> &fname) {
   if (!fname) {
     return {};
@@ -1595,8 +1640,7 @@ Instr add_argc_counter(const std::optional<std::string> &fname, size_t nargs) {
 
 } // namespace common
 
-std::pair<std::vector<Instr>, std::vector<Instr>>
-protect_registers(Env<Prg, mode_> &env) {
+std::pair<std::vector<Instr>, std::vector<Instr>> protect_registers(Env &env) {
   std::vector<Instr> pushr;
   std::vector<Instr> popr;
   if (env.has_closure) {
@@ -1633,13 +1677,13 @@ align_stack(size_t saved_registers, size_t stack_arguments) {
                  L{static_cast<int>(word_size * (1 + stack_arguments))}, rsp}}};
 }
 
-Instr move_result(Env<Prg, mode_> &env) {
+Instr move_result(Env &env) {
   const auto y = env.allocate();
   return Mov{rax, y};
 }
 
 } // namespace utils::call_compilation
-std::vector<Instr> compile_common_call(Env<Prg, mode_> &env,
+std::vector<Instr> compile_common_call(Env &env,
                                        const std::optional<std::string> &fname,
                                        size_t nargs) {
   using namespace utils::call_compilation::common;
@@ -1666,7 +1710,7 @@ std::vector<Instr> compile_common_call(Env<Prg, mode_> &env,
 namespace utils::call_compilation::safepoint {
 
 std::pair<size_t, std::vector<Instr>>
-setup_arguments(Env<Prg, mode_> &env, const std::optional<std::string> &fname,
+setup_arguments(Env &env, const std::optional<std::string> &fname,
                 size_t nargs) {
   auto args = pop_arguments(env, nargs);
   auto [arg_locs, stack_slots] = env.arguments_locations(args.size());
@@ -1687,8 +1731,8 @@ Instr call(const std::optional<std::string> &fname) { return Call{*fname}; }
 
 } // namespace utils::call_compilation::safepoint
 std::vector<Instr>
-compile_safepoint_call(Env<Prg, mode_> &env,
-                       const std::optional<std::string> &fname, size_t nargs) {
+compile_safepoint_call(Env &env, const std::optional<std::string> &fname,
+                       size_t nargs) {
   using namespace utils::call_compilation::safepoint;
   using namespace utils::call_compilation;
 
@@ -1706,7 +1750,7 @@ compile_safepoint_call(Env<Prg, mode_> &env,
                        std::move(move_result_code));
 }
 
-std::vector<Instr> compile_call(Env<Prg, mode_> &env,
+std::vector<Instr> compile_call(Env &env,
                                 std::optional<std::string_view> fname_in,
                                 size_t nargs, bool tail) {
   std::optional<std::string> fname;
@@ -1909,10 +1953,10 @@ struct SMInstr {
    Take an environment, a stack machine program, and returns a pair ---
    the updated environment and the list of x86 instructions
 */
-std::vector<Instr> compile(cmd, Env<Prg, mode_> &env,
+std::vector<Instr> compile(const Options &cmd, Env &env,
                            const std::vector<std::string> &imports,
                            const SMInstr &instr) {
-  const std::string stack_state = mode_.is_debug ? env.print_stack() : "";
+  const std::string stack_state = env.mode.is_debug ? env.print_stack() : "";
   if (env.is_barrier()) {
     return std::visit( //
         utils::multifunc{
@@ -2123,9 +2167,9 @@ std::vector<Instr> compile(cmd, Env<Prg, mode_> &env,
             [&env](const SMInstr::LINE &x) -> std::vector<Instr> {
               return env.gen_line(x.n);
             },
-            [&env](const SMInstr::FAIL &x) -> std::vector<Instr> {
+            [&env, &cmd](const SMInstr::FAIL &x) -> std::vector<Instr> {
               const auto v = x.val ? env.peek() : env.pop();
-              const auto msg_addr = env.register_string(cmd.get_infile());
+              const auto msg_addr = env.register_string(cmd.filename);
               const auto vr = env.allocate();
               const auto sr = env.allocate();
               const auto liner = env.allocate();
@@ -2150,7 +2194,7 @@ std::vector<Instr> compile(cmd, Env<Prg, mode_> &env,
   }
 }
 
-std::vector<Instr> compile(cmd, Env<Prg, mode_> &env,
+std::vector<Instr> compile(const Options &cmd, Env &env,
                            const std::vector<std::string> &imports,
                            const std::vector<SMInstr> &code) {
   std::vector<Instr> result;
