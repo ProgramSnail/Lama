@@ -1033,50 +1033,50 @@ public:
 
   /* registers a string constant */
   Opnd register_string(const std::string &x) {
-    // TODO
-    // let escape x =
-    //   let n = String.length x in
-    //   let buf = Buffer.create (n * 2) in
-    //   let rec iterate i =
-    //     if i < n then
-    //       match x.[i] with
-    //       | '"' ->
-    //           Buffer.add_char buf '\\';
-    //           Buffer.add_char buf '"';
-    //           iterate (i + 1)
-    //       | '\\' -> (
-    //           if i + 1 >= n then (
-    //             Buffer.add_char buf '\\';
-    //             Buffer.add_char buf '\\')
-    //           else
-    //             match x.[i + 1] with
-    //             | 'n' ->
-    //                 Buffer.add_char buf '\\';
-    //                 Buffer.add_char buf 'n';
-    //                 iterate (i + 2)
-    //             | 't' ->
-    //                 Buffer.add_char buf '\\';
-    //                 Buffer.add_char buf 't';
-    //                 iterate (i + 2)
-    //             | _ ->
-    //                 Buffer.add_char buf '\\';
-    //                 Buffer.add_char buf '\\';
-    //                 iterate (i + 1))
-    //       | c ->
-    //           Buffer.add_char buf c;
-    //           iterate (i + 1)
-    //   in
-    //   iterate 0;
-    //   Buffer.contents buf
-    // in
-    // let x = escape x in
-    // let name = M.find_opt x stringm in
-    // match name with
-    // | Some name -> (M (D, I, A, name), self)
-    // | None ->
-    //     let name = Printf.sprintf "string_%d" scount in
-    //     let m = M.add x name stringm in
-    //     (M (D, I, A, name), {<scount = scount + 1; stringm = m>})
+    const auto escape = [](const std::string &y) {
+      const size_t n = y.size();
+      std::string buffer;
+      buffer.reserve(n * 2);
+      for (size_t i = 0; i < n; ++i) {
+        switch (y[i]) {
+        case '"':
+          buffer.push_back('\\');
+          buffer.push_back('"');
+          break;
+        case '\\':
+          buffer.push_back('\\');
+          if (i + 1 >= n) {
+            buffer.push_back('\\');
+          } else {
+            switch (y[i + 1]) {
+            case 'n':
+            case 't':
+              buffer.push_back(y[i + 1]);
+              ++i;
+              break;
+            default:
+              buffer.push_back('\\');
+              break;
+            }
+          }
+          break;
+        default:
+          buffer.push_back(y[i]);
+          break;
+        }
+      }
+      return buffer;
+    };
+    const auto y = escape(x);
+
+    const auto it = stringm.find(y);
+
+    if (it == stringm.end()) {
+      const auto name = std::format("string_{}", scount);
+      stringm.insert({y, name});
+      ++scount;
+    }
+    return M{DataKind::D, Externality::I, Addressed::A, it->second};
   }
 
   /* gets all global variables */
