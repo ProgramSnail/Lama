@@ -562,8 +562,10 @@ template <typename U> struct AbstractSymbolicStack {
   // val peek : 'a t -> 'a symbolic_location
   // val peek2 : 'a t -> 'a symbolic_location * 'a symbolic_location
 
+  //
+
   /* Last allocated position on symbolic stack */
-  struct StackState {
+  struct State {
     struct S {
       size_t n;
     };
@@ -579,16 +581,13 @@ template <typename U> struct AbstractSymbolicStack {
     const W &operator*() const { return val; }
     const W &operator->() const { return val; }
   };
-  using S = StackState::S;
-  using R = StackState::R;
-  using E = StackState::E;
+  using S = State::S;
+  using R = State::R;
+  using E = State::E;
 
-  struct T {
-    StackState state;
-    std::vector<U> registers;
-  };
+  //
 
-  struct SymbolicLocation {
+  struct Location {
     struct Stack {
       int n;
     };
@@ -608,122 +607,119 @@ template <typename U> struct AbstractSymbolicStack {
       return std::holds_alternative<S>(val);
     }
   };
-  using Stack = SymbolicLocation::Stack;
-  using Register = SymbolicLocation::Register;
+  using Stack = Location::Stack;
+  using Register = Location::Register;
 
-  static AbstractSymbolicStack::T empty(std::vector<U> registers) {
-    return {{typename StackState::E{}}, std::move(registers)};
+public:
+  State state;
+  std::vector<U> registers;
+
+public:
+  AbstractSymbolicStack(std::vector<U> registers)
+      : state(typename State::E{}), registers(std::move(registers)) {}
+
+  State next_state(const State &v) const {
+    return std::visit(utils::multifunc{
+                          [](const S &x) -> State { return {S(x.n)}; },
+                          [this](const R &x) -> State {
+                            if (x.n + 1 >= registers.size()) {
+                              return {S(0)};
+                            } else {
+                              return {R(x.n + 1)};
+                            }
+                          },
+                          [](const E &) -> State { return {R(0)}; },
+                      },
+                      *v);
   }
 
-  static T next(T v) {
-    StackState new_state =
-        std::visit(utils::multifunc{
-                       [](const S &x) -> StackState { return {S(x.n)}; },
-                       [&v](const R &x) -> StackState {
-                         if (x.n + 1 >= v.registers.size()) {
-                           return {S(0)};
-                         } else {
-                           return {R(x.n + 1)};
-                         }
-                       },
-                       [](const E &) -> StackState { return {R(0)}; },
-                   },
-                   *v.state);
-    return {new_state, std::move(v.registers)};
+  State previous_state(const State &v) const {
+    return std::visit(utils::multifunc{
+                          [this](const S &x) -> State {
+                            return x.n == 0 ? State{R{registers.size() - 1}}
+                                            : State{S{x.n - 1}};
+                          },
+                          [](const R &x) -> State {
+                            return x.n == 0 ? State{E{}} : State{R{x.n - 1}};
+                          },
+                          [](const E &) -> State {
+                            failure("Empty stack %s: %d", __FILE__, __LINE__);
+                            utils::unreachable();
+                          },
+                      },
+                      *v);
   }
 
-  static T previous(T v) {
-    StackState new_state = std::visit(
-        utils::multifunc{
-            [&v](const S &x) -> StackState {
-              return x.n == 0 ? StackState{R{v.registers.size() - 1}}
-                              : StackState{S{x.n - 1}};
-            },
-            [](const R &x) -> StackState {
-              return x.n == 0 ? StackState{E{}} : StackState{R{x.n - 1}};
-            },
-            [](const E &) -> StackState {
-              failure("Empty stack %s: %d", __FILE__, __LINE__);
-              utils::unreachable();
-            },
-        },
-        *v.state);
-    return {new_state, std::move(v.registers)};
+  Location location(const std::optional<State> &another_state = {}) const {
+    return std::visit(utils::multifunc{
+                          [](const S &x) -> Location { return {Stack(x.n)}; },
+                          [this](const R &x) -> Location {
+                            return {Register{registers[x.n]}};
+                          },
+                          [](const E &) -> Location {
+                            failure("Empty stack %s: %d", __FILE__, __LINE__);
+                            utils::unreachable();
+                          },
+                      },
+                      another_state ? **another_state : *state);
   }
 
-  static SymbolicLocation location(const T &v) {
-    return std::visit(
-        utils::multifunc{
-            [](const S &x) -> SymbolicLocation { return {Stack(x.n)}; },
-            [&v](const R &x) -> SymbolicLocation {
-              return {Register{v.registers[x.n]}};
-            },
-            [](const E &) -> SymbolicLocation {
-              failure("Empty stack %s: %d", __FILE__, __LINE__);
-              utils::unreachable();
-            },
-        },
-        *v.state);
-  }
-
-  static bool is_empty(const T &v) {
-    return std::holds_alternative<typename StackState::E>(*v.state);
+  bool is_empty() const {
+    return std::holds_alternative<typename State::E>(*state);
   }
 
   // BETTER: replace with range
-  static std::vector<U> live_registers(const T &v) {
+  std::vector<U> live_registers() const {
     return std::visit( //
         utils::multifunc{
-            [&v](const S &) { return v.registers; },
-            [&v](const R &x) {
+            [this](const S &) { return registers; },
+            [this](const R &x) {
               std::vector<U> registers_prefix;
-              registers_prefix.insert(registers_prefix.end(),
-                                      v.registers.begin(),
-                                      v.registers.begin() + x.n + 1);
+              registers_prefix.insert(registers_prefix.end(), registers.begin(),
+                                      registers.begin() + x.n + 1);
               // NOTE: same to (Array.sub registers 0 (n + 1))
               return registers_prefix;
             },
             [](const E &) { return std::vector<U>{}; },
         },
-        *v.state);
+        *state);
   }
 
-  static size_t stack_size(const T &v) {
+  size_t stack_size() const {
     return std::visit(utils::multifunc{
                           [](const S &x) { return x.n + 1; },
                           [](const auto &) -> size_t { return 0; },
                       },
-                      *v.state);
+                      *state);
   }
 
-  static std::pair<T, SymbolicLocation> allocate(T v) {
-    // let state = next state in
-    auto loc = location(v);
-    return {next(std::move(v)), loc};
+  Location allocate() {
+    state = next_state(state);
+    return location();
   }
 
-  static std::pair<T, SymbolicLocation> pop(T v) {
-    auto loc = location(v);
-    return {previous(std::move(v)), loc};
+  Location pop() {
+    state = previous_state(state);
+    return location();
   }
 
-  static SymbolicLocation peek(const T &v) { return location(v); }
+  Location peek() const { return location(); }
 
-  static std::pair<SymbolicLocation, SymbolicLocation> peek2(const T &v) {
-    return {location(v), location(previous(v))};
+  std::pair<Location, Location> peek2() const {
+    return {location(), location(previous_state(state))};
   }
 };
 
 struct SymbolicStack {
   using AbSS = AbstractSymbolicStack<Register::T>;
 
-  using S = AbSS::StackState::S;
-  using R = AbSS::StackState::R;
-  using E = AbSS::StackState::E;
+  using S = AbSS::State::S;
+  using R = AbSS::State::R;
+  using E = AbSS::State::E;
 
-  using SymbolicLocation = AbSS::SymbolicLocation;
-  using Stack = SymbolicLocation::Stack;
-  using Register = SymbolicLocation::Register;
+  using Location = AbSS::Location;
+  using Stack = Location::Stack;
+  using Register = Location::Register;
 
   // type t
 
@@ -736,55 +732,45 @@ struct SymbolicStack {
   // val peek : t -> opnd
   // val peek2 : t -> opnd * opnd
 
-  struct T {
-    AbSS::T state;
-    size_t nlocals;
-  };
+public:
+  AbSS state;
+  size_t nlocals;
 
+public:
   /* To use free argument registers we have to rewrite function call
      compilation. Otherwise we will result with the following code in
      arguments setup: movq    %rcx,   %rdx movq    %rdx,   %rsi */
-  static T empty(size_t nlocals) {
-    return {
-        .state = AbSS::empty(Registers::extra_caller_saved_registers),
-        .nlocals = nlocals,
-    };
+  SymbolicStack(size_t nlocals)
+      : state(AbSS(Registers::extra_caller_saved_registers)), nlocals(nlocals) {
   }
 
-  static Opnd opnd_from_loc(const T &v, const SymbolicLocation &loc) {
+  Opnd opnd_from_loc(const Location &loc) const {
     return std::visit(
         utils::multifunc{
             [](const Register &x) -> Opnd { return {Opnd::R{x.r}}; },
-            [&v](const Stack &x) -> Opnd { return Opnd::S{x.n + v.nlocals}; },
+            [this](const Stack &x) -> Opnd { return Opnd::S{x.n + nlocals}; },
         },
         *loc);
   }
 
-  static bool is_empty(const T &v) { return AbSS::is_empty(v.state); };
+  bool is_empty() const { return state.is_empty(); };
 
-  static std::vector<Opnd> live_registers(const T &v) {
+  std::vector<Opnd> live_registers() const {
     return utils::transform<::Register::T, Opnd>(
-        AbSS::live_registers(v.state),
-        [](auto &&r) -> Opnd { return Opnd::R{r}; });
+        state.live_registers(), [](auto &&r) -> Opnd { return Opnd::R{r}; });
   }
 
-  static size_t stack_size(const T &v) { return AbSS::stack_size(v.state); }
+  size_t stack_size() const { return state.stack_size(); }
 
-  static std::pair<T, Opnd> allocate(const T &v) {
-    auto [state, loc] = AbSS::allocate(v.state);
-    return {{std::move(state), v.nlocals}, opnd_from_loc(v, loc)};
-  } // TODO: check
+  Opnd allocate() { return opnd_from_loc(state.allocate()); }
 
-  static std::pair<T, Opnd> pop(const T &v) {
-    auto [state, loc] = AbSS::pop(v.state);
-    return {{std::move(state), v.nlocals}, opnd_from_loc(v, loc)};
-  }
+  Opnd pop() { return opnd_from_loc(state.pop()); }
 
-  static Opnd peek(const T &v) { return opnd_from_loc(v, AbSS::peek(v.state)); }
+  Opnd peek() const { return opnd_from_loc(state.peek()); }
 
-  static std::pair<Opnd, Opnd> peek2(const T &v) {
-    const auto [loc1, loc2] = AbSS::peek2(v.state);
-    return {opnd_from_loc(v, loc1), opnd_from_loc(v, loc2)};
+  std::pair<Opnd, Opnd> peek2() const {
+    const auto [loc1, loc2] = state.peek2();
+    return {opnd_from_loc(loc1), opnd_from_loc(loc2)};
   }
 };
 
@@ -799,11 +785,10 @@ struct Mode {
   OS target_os;
 };
 
-// TODO: rebuild in c++ way
+// TODO: remove unrequired parts
 struct Env {
 private:
-  const std::string chars =
-      "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'";
+  const static std::string chars;
 
   // NOTE: is not required
   // const std::vector<Opnd> argument_registers = Registers.argument_registers
@@ -814,10 +799,10 @@ private:
   size_t scount = 0;         /* string count */
   size_t stack_slots = 0;    /* maximal number of stack positions */
   size_t static_size = 0;    /* static data size */
-  SymbolicStack::T stack = SymbolicStack::empty(0); /* symbolic stack */
+  SymbolicStack stack = SymbolicStack(0); /* symbolic stack */
   std::vector<std::vector<std::string>> locals;
-  MapS<SymbolicStack::T> stackmap; /* labels to stack map */
-  bool barrier = false;            /* barrier condition */
+  MapS<SymbolicStack> stackmap; /* labels to stack map */
+  bool barrier = false;         /* barrier condition */
 
   SetS externs;
   size_t nlabels = 0;
@@ -833,7 +818,7 @@ public:
 
   size_t nargs = 0; /* number of function arguments */
 
-  Mode mode;
+  const Mode mode;
 
 public:
   Env(Mode mode) : mode(std::move(mode)) {}
@@ -850,13 +835,11 @@ public:
   // TODO: add SymbolicStack functions to opimize
   std::string print_stack() const {
     std::stringstream result;
-    SymbolicStack::T stack_copy = stack;
+    SymbolicStack stack_copy = stack;
 
     std::vector<std::string> elements;
-    while (!SymbolicStack::is_empty(stack_copy)) {
-      auto result = SymbolicStack::pop(std::move(stack_copy));
-      stack_copy = std::move(result.first);
-      elements.push_back(to_string(result.second));
+    while (!stack_copy.is_empty()) {
+      elements.push_back(to_string(stack_copy.pop()));
     }
     std::reverse(elements.begin(), elements.end());
     for (const auto &element : elements) {
@@ -866,7 +849,7 @@ public:
   }
 
   /* Assert empty stack */
-  void assert_empty_stack() const { assert(SymbolicStack::is_empty(stack)); }
+  void assert_empty_stack() const { assert(stack.is_empty()); }
 
   /* check barrier condition */
   bool is_barrier() { return barrier; }
@@ -878,13 +861,13 @@ public:
   void drop_barrier() { barrier = false; }
 
   /* drop stack */
-  void drop_stack() { stack = SymbolicStack::empty(static_size); }
+  void drop_stack() { stack = SymbolicStack(static_size); }
 
   /* associates a stack to a label */
   void set_stack(std::string const &l) { stackmap.insert({l, stack}); }
 
   /* retrieves a stack for a label */
-  std::optional<SymbolicStack::T *> retrieve_stack(std::string const &l) {
+  std::optional<SymbolicStack *> retrieve_stack(std::string const &l) {
     auto it = stackmap.find(l);
     if (it != stackmap.end()) {
       return &it->second;
@@ -929,26 +912,20 @@ public:
 
   /* allocates a fresh position on a symbolic stack */
   Opnd allocate() {
-    auto [new_stack, opnd] = SymbolicStack::allocate(stack);
-    stack = std::move(new_stack);
-    stack_slots =
-        std::max(stack_slots, (static_size + SymbolicStack::stack_size(stack)));
+    auto opnd = stack.allocate();
+    stack_slots = std::max(stack_slots, (static_size + stack.stack_size()));
     return opnd;
   }
 
   /* pops one operand from the symbolic stack */
-  Opnd pop() {
-    auto [new_stack, opnd] = SymbolicStack::pop(stack);
-    stack = std::move(new_stack);
-    return opnd;
-  }
+  Opnd pop() { return stack.pop(); }
 
   /* is rdx register in use */
   bool rdx_in_use() const { return nargs > 2; }
 
-  std::pair<std::vector<SymbolicStack::SymbolicLocation>, size_t>
+  std::pair<std::vector<SymbolicStack::Location>, size_t>
   arguments_locations(size_t n) {
-    using SymbolicLocation = SymbolicStack::SymbolicLocation;
+    using Location = SymbolicStack::Location;
     using Register = SymbolicStack::Register;
     using Stack = SymbolicStack::Stack;
 
@@ -956,34 +933,31 @@ public:
       std::vector<::Register::T> result;
       result.insert(result.end(), argument_registers.begin(),
                     argument_registers.begin() + n);
-      return {
-          utils::transform<::Register::T, SymbolicLocation>(
-              std::move(result),
-              [](const auto &r) -> SymbolicLocation { return {Register{r}}; }),
-          0};
+      return {utils::transform<::Register::T, Location>(
+                  std::move(result),
+                  [](const auto &r) -> Location { return {Register{r}}; }),
+              0};
     } else {
       return {utils::concat( //
-                  utils::transform<::Register::T, SymbolicLocation>(
+                  utils::transform<::Register::T, Location>(
                       std::move(argument_registers),
-                      [](const auto &r) -> SymbolicLocation {
-                        return {Register{r}};
-                      }),
-                  std::vector<SymbolicLocation>(
+                      [](const auto &r) -> Location { return {Register{r}}; }),
+                  std::vector<Location>(
                       n - Registers::argument_registers.size(), {Stack{}})),
               n - Registers::argument_registers.size()};
     }
   }
 
   /* peeks the top of the stack (the stack does not change) */
-  Opnd peek() const { return SymbolicStack::peek(stack); }
+  Opnd peek() const { return stack.peek(); }
 
   /* peeks two topmost values from the stack (the stack itself does not
    * change)
    */
-  std::pair<Opnd, Opnd> peek2() const { return ::SymbolicStack::peek2(stack); }
+  std::pair<Opnd, Opnd> peek2() const { return stack.peek2(); }
 
   /* tag hash: gets a hash for a string tag */
-  uint64_t hash(const std::string &tag) {
+  static uint64_t hash(const std::string &tag) {
     assert(!tag.empty());
     uint64_t h = 0;
     for (size_t i = 0; i < std::min((tag.size() - 1), 9lu); ++i) {
@@ -1071,7 +1045,7 @@ public:
     nargs = new_nargs;
     static_size = new_nlocals;
     stack_slots = new_nlocals;
-    stack = SymbolicStack::empty(new_nlocals);
+    stack = SymbolicStack(new_nlocals);
     fname = f;
     has_closure = new_has_closure;
     first_line = true;
@@ -1098,8 +1072,7 @@ public:
         std::move(array_registers),
         [](Register::T &&r) -> Opnd { return {r}; });
 
-    return utils::concat(std::move(array_result),
-                         SymbolicStack::live_registers(stack));
+    return utils::concat(std::move(array_result), stack.live_registers());
   }
 
   bool do_opt_stabs() const { return mode.target_os == OS::LINUX; }
@@ -1134,6 +1107,8 @@ public:
     return label;
   }
 };
+const std::string Env::chars =
+    "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'";
 
 int stack_offset(int i) { return (i >= 0 ? (i + 1) : (-i + 1)) * word_size; }
 
@@ -1549,7 +1524,7 @@ namespace common {
 std::pair<size_t, std::vector<Instr>> setup_arguments(Env &env, size_t nargs) {
   const auto move_arguments =
       [](std::vector<Opnd> &&args,
-         std::vector<SymbolicStack::SymbolicLocation> &&arg_locs) {
+         std::vector<SymbolicStack::Location> &&arg_locs) {
         using Register = SymbolicStack::Register;
 
         assert(args.size() == arg_locs.size());
@@ -2262,10 +2237,10 @@ std::vector<Instr> compile(const Options &cmd, Env &env,
               return compile_call(env, ".elem", 2, false);
             },
             [&env](const SMInstr::CALL &x) -> std::vector<Instr> {
-              return compile_call(env, x.fname, x.n, x.tail); // TODO: call
+              return compile_call(env, x.fname, x.n, x.tail); // call
             },
             [&env](const SMInstr::CALLC &x) -> std::vector<Instr> {
-              return compile_call(env, {}, x.n, x.tail); // TODO: closure call
+              return compile_call(env, {}, x.n, x.tail); // closure call
             },
             [&env](const SMInstr::SEXP &x) -> std::vector<Instr> {
               const auto s = env.allocate();
