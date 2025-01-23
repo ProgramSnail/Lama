@@ -32,7 +32,7 @@ template <class... Ts> multifunc(Ts...) -> multifunc<Ts...>;
 #endif
 }
 
-// TODO: use ranges transform
+// BETTER: use ranges transform
 template <typename T, typename U>
 std::vector<U> transform(std::vector<T> v, const std::function<U(T &&)> &f) {
   std::vector<U> result;
@@ -122,7 +122,7 @@ std::string labeled_scoped(int64_t i, const std::string_view s) {
 
 } // namespace utils
 
-enum class OS { // TODO: other oses
+enum class OS {
   LINUX,
   DARWIN,
 };
@@ -186,7 +186,7 @@ T of_64bit(const T &r) { return {.name = r.reg.name64, .reg = r.reg}; }
 
 const std::string &to_string(const T &r) { return r.name; }
 
-const auto none = Register::T{};
+// const auto none = Register::T{}; // NOTE: not used
 } // namespace Register
 
 namespace Registers {
@@ -442,12 +442,12 @@ struct Instr {
   };
   /* a conditional jump                                    */
   struct CJmp {
-    std::string left;
-    std::string right;
-  }; // TODO: right names (?)
+    std::string cmp;
+    std::string label;
+  };
   /* a non-conditional jump by a name                      */
   struct Jmp {
-    std::string name;
+    std::string label;
   };
   /* a non-conditional jump by indirect address            */
   struct JmpI {
@@ -565,10 +565,10 @@ template <typename U> struct AbstractSymbolicStack {
   /* Last allocated position on symbolic stack */
   struct StackState {
     struct S {
-      int n;
+      size_t n;
     };
     struct R {
-      int n;
+      size_t n;
     };
     struct E {};
 
@@ -626,7 +626,7 @@ template <typename U> struct AbstractSymbolicStack {
                            return {R(x.n + 1)};
                          }
                        },
-                       [](const E &x) -> StackState { return {R(0)}; },
+                       [](const E &) -> StackState { return {R(0)}; },
                    },
                    *v.state);
     return {new_state, std::move(v.registers)};
@@ -636,14 +636,13 @@ template <typename U> struct AbstractSymbolicStack {
     StackState new_state = std::visit(
         utils::multifunc{
             [&v](const S &x) -> StackState {
-              return x.n == 0 ? StackState{R{
-                                    static_cast<int>(v.registers.size() - 1)}}
+              return x.n == 0 ? StackState{R{v.registers.size() - 1}}
                               : StackState{S{x.n - 1}};
             },
-            [&v](const R &x) -> StackState {
+            [](const R &x) -> StackState {
               return x.n == 0 ? StackState{E{}} : StackState{R{x.n - 1}};
             },
-            [](const E &x) -> StackState {
+            [](const E &) -> StackState {
               failure("Empty stack %s: %d", __FILE__, __LINE__);
               utils::unreachable();
             },
@@ -659,7 +658,7 @@ template <typename U> struct AbstractSymbolicStack {
             [&v](const R &x) -> SymbolicLocation {
               return {Register{v.registers[x.n]}};
             },
-            [](const E &x) -> SymbolicLocation {
+            [](const E &) -> SymbolicLocation {
               failure("Empty stack %s: %d", __FILE__, __LINE__);
               utils::unreachable();
             },
@@ -671,11 +670,11 @@ template <typename U> struct AbstractSymbolicStack {
     return std::holds_alternative<typename StackState::E>(*v.state);
   }
 
-  // TODO: replace with range
+  // BETTER: replace with range
   static std::vector<U> live_registers(const T &v) {
     return std::visit( //
         utils::multifunc{
-            [&v](const S &x) { return v.registers; },
+            [&v](const S &) { return v.registers; },
             [&v](const R &x) {
               std::vector<U> registers_prefix;
               registers_prefix.insert(registers_prefix.end(),
@@ -684,7 +683,7 @@ template <typename U> struct AbstractSymbolicStack {
               // NOTE: same to (Array.sub registers 0 (n + 1))
               return registers_prefix;
             },
-            [](const E &x) { return std::vector<U>{}; },
+            [](const E &) { return std::vector<U>{}; },
         },
         *v.state);
   }
@@ -692,7 +691,7 @@ template <typename U> struct AbstractSymbolicStack {
   static size_t stack_size(const T &v) {
     return std::visit(utils::multifunc{
                           [](const S &x) { return x.n + 1; },
-                          [](const auto &x) { return 0; },
+                          [](const auto &) -> size_t { return 0; },
                       },
                       *v.state);
   }
@@ -795,38 +794,19 @@ using SetS = std::unordered_set<std::string>;
 /* A map indexed by strings */
 template <typename T> using MapS = std::unordered_map<std::string, T>;
 
-// TODO: any func required (?)
-template <typename Prg> struct Indexer {
-  // let rec make_env m = function
-  //   | [] -> m
-  //   | LABEL l :: tl | FLABEL l :: tl -> make_env (M.add l tl m) tl
-  //   | _ :: tl -> make_env m tl
-  // in
-  // let m = make_env M.empty prg in
-  // object
-  //   method is_label l = M.mem l m
-  //   method labeled l = M.find l m
-  // end
-
-  MapS<Prg> m;
-};
-
 struct Mode {
   bool is_debug;
   OS target_os;
 };
 
-// FIXME: TODO: find out what is Prg
-using Prg = std::string;
-
 // TODO: rebuild in c++ way
-struct Env : public Indexer<Prg> {
+struct Env {
 private:
   const std::string chars =
       "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'";
+
+  // NOTE: is not required
   // const std::vector<Opnd> argument_registers = Registers.argument_registers
-  // // TODO: cast
-  const size_t argument_registers_size = Registers::argument_registers.size();
 
 private:
   SetS globals;              /* a set of global variables */
@@ -836,7 +816,6 @@ private:
   size_t static_size = 0;    /* static data size */
   SymbolicStack::T stack = SymbolicStack::empty(0); /* symbolic stack */
   std::vector<std::vector<std::string>> locals;
-  /* function local variables */   // TODO: never used (?)
   MapS<SymbolicStack::T> stackmap; /* labels to stack map */
   bool barrier = false;            /* barrier condition */
 
@@ -883,23 +862,6 @@ public:
     for (const auto &element : elements) {
       result << element << " ";
     }
-    return result.str();
-  }
-
-  std::string print_locals() const {
-    std::stringstream result;
-    // TODO
-    result << std::format("LOCALS: size = {}\n", static_size);
-    for (const auto &l : locals) {
-      result << "(";
-      // NOTE: same to List.iter (fun (a, i) -> Printf.printf "%s=%d " a i) l;
-      for (size_t i = 0; i < l.size(); ++i) {
-        result << std::format("{}={} ", l[i],
-                              i); // TODO: exact format of locals
-      }
-      result << ")\n";
-    }
-    result << "END LOCALS\n";
     return result.str();
   }
 
@@ -953,10 +915,10 @@ public:
               return M{DataKind::F, ext, Addressed::A, x.s};
             },
             [](const ValT::Local &x) -> Opnd { return S{x.n}; },
-            [this](const ValT::Arg &x) -> Opnd {
-              return x.n < argument_registers_size
+            [](const ValT::Arg &x) -> Opnd {
+              return x.n < Registers::argument_registers.size()
                          ? Opnd{argument_registers[x.n]}
-                         : S{-(x.n - argument_registers_size) - 1};
+                         : S{-(x.n - Registers::argument_registers.size()) - 1};
             },
             [](const ValT::Access &x) -> Opnd {
               return I{static_cast<int>(word_size * (x.n + 1)), r15};
@@ -986,13 +948,11 @@ public:
 
   std::pair<std::vector<SymbolicStack::SymbolicLocation>, size_t>
   arguments_locations(size_t n) {
-    // TODO
-
     using SymbolicLocation = SymbolicStack::SymbolicLocation;
     using Register = SymbolicStack::Register;
     using Stack = SymbolicStack::Stack;
 
-    if (n < argument_registers_size) {
+    if (n < Registers::argument_registers.size()) {
       std::vector<::Register::T> result;
       result.insert(result.end(), argument_registers.begin(),
                     argument_registers.begin() + n);
@@ -1008,9 +968,9 @@ public:
                       [](const auto &r) -> SymbolicLocation {
                         return {Register{r}};
                       }),
-                  std::vector<SymbolicLocation>(n - argument_registers_size,
-                                                {Stack{}})),
-              n - argument_registers_size};
+                  std::vector<SymbolicLocation>(
+                      n - Registers::argument_registers.size(), {Stack{}})),
+              n - Registers::argument_registers.size()};
     }
   }
 
@@ -1095,17 +1055,6 @@ public:
       if (externs.count(x) == 0) {
         result.push_back(x);
       }
-    }
-    return result;
-  }
-
-  /* gets all string definitions */
-  SetS get_strings() const {
-    SetS result;
-    result.reserve(stringm.size());
-    for (const auto &str : stringm) {
-      result.insert(
-          str.first); // TODO: M.bindings -> take first elem argument (?)
     }
     return result;
   }
@@ -1206,9 +1155,7 @@ std::string to_code(const Env &env, const Opnd &opnd) {
               return std::format("{}(%rip)", x.name);
             }
             // else -> x.ext == Externality::E && x.kind == DataKind::D
-            return std::format(
-                "{}@GOTPCREL(%rip)",
-                env.prefixed(x.name)); // TODO: does @ mean something (?)
+            return std::format("{}@GOTPCREL(%rip)", env.prefixed(x.name));
           },
           [&env](const Opnd::C &x) {
             return std::format("${}", env.prefixed(x.name));
@@ -1248,7 +1195,7 @@ std::string to_code(const Env &env, const Instr &instr) {
 
   return std::visit(
       utils::multifunc{
-          [](const Cltd &x) -> std::string { return "\tcqo"; },
+          [](const Cltd &) -> std::string { return "\tcqo"; },
           [](const Set &x) -> std::string {
             auto r = to_string(Register::of_8bit(x.reg));
             return std::format("\tset{}\t{}", x.suffix, std::move(r));
@@ -1283,7 +1230,7 @@ std::string to_code(const Env &env, const Instr &instr) {
           [&opnd_to_code](const Pop &x) -> std::string {
             return std::format("\tpopq\t{}", opnd_to_code(x.opnd));
           },
-          [](const Ret &x) -> std::string { return "\tret"; },
+          [](const Ret &) -> std::string { return "\tret"; },
           [&env](const Call &x) -> std::string {
             return std::format("\tcall\t{}", env.prefixed(x.name));
           },
@@ -1294,13 +1241,13 @@ std::string to_code(const Env &env, const Instr &instr) {
             return std::format("{}:\n", env.prefixed(x.name));
           },
           [&env](const Jmp &x) -> std::string {
-            return std::format("\tjmp\t{}", env.prefixed(x.name));
+            return std::format("\tjmp\t{}", env.prefixed(x.label));
           },
           [&opnd_to_code](const JmpI &x) -> std::string {
             return std::format("\tjmp\t*({})", opnd_to_code(x.opnd));
           },
           [&env](const CJmp &x) -> std::string {
-            return std::format("\tj{}\t{}", x.left, env.prefixed(x.right));
+            return std::format("\tj{}\t{}", x.cmp, env.prefixed(x.label));
           },
           [](const Meta &x) -> std::string {
             return std::format("{}\n", x.name);
@@ -1317,7 +1264,7 @@ std::string to_code(const Env &env, const Instr &instr) {
           [&opnd_to_code](const Sar1 &x) -> std::string {
             return std::format("\tsarq\t{}", opnd_to_code(x.opnd));
           },
-          [](const Repmovsl &x) -> std::string { return "\trep movsq\t"; },
+          [](const Repmovsl &) -> std::string { return "\trep movsq\t"; },
       },
       *instr);
 }
@@ -1604,7 +1551,6 @@ std::pair<size_t, std::vector<Instr>> setup_arguments(Env &env, size_t nargs) {
       [](std::vector<Opnd> &&args,
          std::vector<SymbolicStack::SymbolicLocation> &&arg_locs) {
         using Register = SymbolicStack::Register;
-        using Stack = SymbolicStack::Stack;
 
         assert(args.size() == arg_locs.size());
 
@@ -2037,7 +1983,7 @@ std::vector<Instr> compile(const Options &cmd, Env &env,
               env.register_extern(x.name);
               return {};
             },
-            [](const SMInstr::IMPORT &x)
+            [](const SMInstr::IMPORT &)
                 -> std::vector<Instr> { // NOTE: not required in bytecode
               return {};
             },
@@ -2093,7 +2039,7 @@ std::vector<Instr> compile(const Options &cmd, Env &env,
                                               Mov{rax, env.loc(x.v)}}
                          : std::vector<Instr>{Mov{s, env.loc(x.v)}};
             },
-            [&env](const SMInstr::STA &x) -> std::vector<Instr> {
+            [&env](const SMInstr::STA &) -> std::vector<Instr> {
               return compile_call(env, ".sta", 3, false);
             },
             [&env](const SMInstr::STI &) -> std::vector<Instr> {
@@ -2107,13 +2053,13 @@ std::vector<Instr> compile(const Options &cmd, Env &env,
             [&env](const SMInstr::BINOP &x) -> std::vector<Instr> {
               return compile_binop(env, x.opr);
             },
-            [&env](const SMInstr::LABEL &x) -> std::vector<Instr> {
+            [](const SMInstr::LABEL &x) -> std::vector<Instr> {
               return {Label{x.s}};
             },
-            [&env](const SMInstr::FLABEL &x) -> std::vector<Instr> {
+            [](const SMInstr::FLABEL &x) -> std::vector<Instr> {
               return {Label{x.s}};
             },
-            [&env](const SMInstr::SLABEL &x) -> std::vector<Instr> {
+            [](const SMInstr::SLABEL &x) -> std::vector<Instr> {
               return {Label{x.s}};
             },
             [&env](const SMInstr::JMP &x) -> std::vector<Instr> {
@@ -2140,8 +2086,7 @@ std::vector<Instr> compile(const Options &cmd, Env &env,
 
               const std::string name = (x.f[0] == 'L' ? x.f.substr(1) : x.f);
 
-              const auto stabs = [&env, &cmd, &x,
-                                  &name]() -> std::vector<Instr> {
+              const auto stabs = [&env, &x, &name]() -> std::vector<Instr> {
                 if (!env.do_opt_stabs()) {
                   return {};
                 }
@@ -2176,7 +2121,8 @@ std::vector<Instr> compile(const Options &cmd, Env &env,
                 }
 
                 auto argc_correct_label = x.f + "_argc_correct";
-                auto pat_addr = // TODO: check that the same string
+                auto pat_addr = // TODO: check is that is the same string to
+                                // ocaml version one
                     env.register_string(
                         "Function %s called with incorrect arguments count. \
                          Expected: %d. Actual: %d\\n");
@@ -2205,65 +2151,68 @@ std::vector<Instr> compile(const Options &cmd, Env &env,
               env.assert_empty_stack();
               const bool has_closure = !x.closure.empty();
               env.enter(x.f, x.nargs, x.nlocals, has_closure);
-              return utils::concat(std::move(stabs_code), Instr{Meta{"\t.cfi_startproc"}},
-                              (x.f == cmd.topname ? std::vector<Instr>{
-                         Mov{M{DataKind::D, Externality::I, Addressed::V, "init"}, rax},
-                         Binop{Opr::TEST, rax, rax},
-                         CJmp{"z", "continue"},
-                         Ret{},
-                         Label{"_ERROR"},
-                         Call{utils::labeled("binoperror")},
-                         Ret{},
-                         Label{"_ERROR2"},
-                         Call {utils::labeled("binoperror2")},
-                         Ret{},
-                         Label{"continue"},
-                         Mov {L {1}, M {DataKind::D, Externality::I, Addressed::V, "init"}},
-                                                 } :std::vector<Instr>{}), 
-                          std::vector<Instr>{
-                      Push{rbp},
-                      Meta{"\t.cfi_def_cfa_offset\t8"},
-                      Meta{"\t.cfi_offset 5, -8"},
-                      Mov{rsp, rbp},
-                      Meta{"\t.cfi_def_cfa_register\t5"},
-                      Binop {Opr::SUB, C{env.lsize()}, rsp},
-                      Mov {rdi, r12},
-                      Mov {rsi, r13},
-                      Mov {rcx, r14},
-                      Mov {rsp, rdi},
-                      Lea {filler, rsi},
-                      Mov {C{env.get_allocated_size()}, rcx},
-                      Repmovsl{},
-                      Mov {r12, rdi},
-                      Mov {r13, rsi},
-                      Mov {r14, rcx},
-                        },
-                        (x.f == "main"? std::vector<Instr>{
-                         /* Align stack as `main` function could be called misaligned */
-                         Mov {L{0xF}, rax},
-                         Binop{Opr::TEST, rsp, rax},
-                         CJmp{"z", "ALIGNED"},
-                         Push{filler},
-                         Label{"ALIGNED"},
-                         /* Initialize gc and arguments */
-                         Push{rdi},
-                         Push{rsi},
-                         Call{"__gc_init"},
-                         Pop{rsi},
-                         Pop{rdi},
-                         Call{"set_args"},
-                                      } :
-                        std::vector<Instr>{}),
-(x.f == cmd.topname ?
-                    // TODO: optimize filter
-  utils::transform<std::string, Instr>(utils::filter<std::string>(std::vector<std::string>{imports}, [](const auto& i) {  return i != "Std"; }),
-    [](const auto& i) -> Instr { return Call{std::format("init" + i)}; })
-: std::vector<Instr>{}),
-                        std::move(check_argc_code)
-                        );
-              // TODO
+              return utils::concat(
+                std::move(stabs_code),
+                Instr{Meta{"\t.cfi_startproc"}},
+                (x.f == cmd.topname ? std::vector<Instr>{
+                   Mov{M{DataKind::D, Externality::I, Addressed::V, "init"}, rax},
+                   Binop{Opr::TEST, rax, rax},
+                   CJmp{"z", "continue"},
+                   Ret{},
+                   Label{"_ERROR"},
+                   Call{utils::labeled("binoperror")},
+                   Ret{},
+                   Label{"_ERROR2"},
+                   Call {utils::labeled("binoperror2")},
+                   Ret{},
+                   Label{"continue"},
+                   Mov {L {1}, M {DataKind::D, Externality::I, Addressed::V, "init"}},
+                } : std::vector<Instr>{}),
+                std::vector<Instr>{
+                  Push{rbp},
+                  Meta{"\t.cfi_def_cfa_offset\t8"},
+                  Meta{"\t.cfi_offset 5, -8"},
+                  Mov{rsp, rbp},
+                  Meta{"\t.cfi_def_cfa_register\t5"},
+                  Binop {Opr::SUB, C{env.lsize()}, rsp},
+                  Mov {rdi, r12},
+                  Mov {rsi, r13},
+                  Mov {rcx, r14},
+                  Mov {rsp, rdi},
+                  Lea {filler, rsi},
+                  Mov {C{env.get_allocated_size()}, rcx},
+                  Repmovsl{},
+                  Mov {r12, rdi},
+                  Mov {r13, rsi},
+                  Mov {r14, rcx},
+                },
+                (x.f == "main"? std::vector<Instr>{
+                   /* Align stack as `main` function could be called misaligned */
+                   Mov {L{0xF}, rax},
+                   Binop{Opr::TEST, rsp, rax},
+                   CJmp{"z", "ALIGNED"},
+                   Push{filler},
+                   Label{"ALIGNED"},
+                   /* Initialize gc and arguments */
+                   Push{rdi},
+                   Push{rsi},
+                   Call{"__gc_init"},
+                   Pop{rsi},
+                   Pop{rdi},
+                   Call{"set_args"},
+                } : std::vector<Instr>{}),
+                (x.f == cmd.topname ? // TODO: optimize filter
+                   utils::transform<std::string, Instr>(
+                       utils::filter<std::string>(
+                           std::vector<std::string>{imports},
+                           [](const auto &i) { return i != "Std"; }),
+                       [](const auto &i) -> Instr { 
+                         return Call{std::format("init" + i)};
+                }) : std::vector<Instr>{}),
+                std::move(check_argc_code)
+              );
             },
-            [&env](const SMInstr::END &y) -> std::vector<Instr> {
+            [&env](const SMInstr::END &) -> std::vector<Instr> {
               const auto x = env.pop();
               env.assert_empty_stack();
               const auto &name = env.fname;
@@ -2303,13 +2252,13 @@ std::vector<Instr> compile(const Options &cmd, Env &env,
                   std::move(stabs));
 
               env.leave();
-              return std::move(result);
+              return result;
             },
             [&env](const SMInstr::RET &) -> std::vector<Instr> {
               const auto x = env.peek();
               return {Mov{x, rax}, Jmp{env.epilogue()}};
             },
-            [&env](const SMInstr::ELEM &x) -> std::vector<Instr> {
+            [&env](const SMInstr::ELEM &) -> std::vector<Instr> {
               return compile_call(env, ".elem", 2, false);
             },
             [&env](const SMInstr::CALL &x) -> std::vector<Instr> {
@@ -2324,7 +2273,7 @@ std::vector<Instr> compile(const Options &cmd, Env &env,
               return utils::concat(mov(L{box(env.hash(x.tag))}, s),
                                    std::move(code));
             },
-            [&env](const SMInstr::DROP &x) -> std::vector<Instr> {
+            [&env](const SMInstr::DROP &) -> std::vector<Instr> {
               env.pop();
               return {};
             },
