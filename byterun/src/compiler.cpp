@@ -42,6 +42,13 @@ std::vector<U> transform(std::vector<T> v, const std::function<U(T &&)> &f) {
   return result;
 }
 
+template <typename T>
+std::vector<T> filter(std::vector<T> &&x,
+                      const std::function<bool(const T &)> &f) {
+  std::erase_if(x, f);
+  return std::move(x);
+}
+
 template <typename T> void insert(std::vector<T> &x, std::vector<T> &&y) {
   x.insert(x.end(), std::move_iterator(y.begin()), std::move_iterator(y.end()));
 }
@@ -121,6 +128,7 @@ enum class OS { // TODO: other oses
 };
 
 struct Options {
+  std::string topname;
   std::string filename;
 };
 
@@ -1791,8 +1799,13 @@ enum class Patt {
   STRCMP,
 };
 
-// TODO
-struct Scope {};
+/* The type for local scopes tree */
+struct Scope {
+  std::string blab;
+  std::string elab;
+  std::vector<std::pair<std::string, int>> names;
+  std::vector<Scope> subs;
+};
 
 // TODO: use bytecode in interpreter represientation instead
 /* The type for the stack machine instructions */
@@ -1946,6 +1959,34 @@ struct SMInstr {
   bool operator==(const SMInstr &other) const = default;
 };
 
+namespace utils::compile {
+
+std::vector<Instr> stabs_scope(Env &env, const SMInstr::BEGIN &x,
+                               const Scope &scope) {
+  auto names = utils::transform<std::pair<std::string, int>, Instr>(
+      scope.names, [](const auto &y) -> Instr {
+        return Meta{std::format("\t.stabs \"{}:1\",128,0,0,-{}",
+                                y.first /*name*/,
+                                stack_offset(y.second /*index*/))};
+      });
+
+  std::vector<Instr> sub_stabs;
+  for (const auto &sub : scope.subs) {
+    insert(sub_stabs, stabs_scope(env, x, sub));
+  }
+
+  if (names.empty()) {
+    return sub_stabs;
+  }
+  return utils::concat(
+      std::move(names),
+      Instr{Meta{std::format("\t.stabn 192,0,0,{}-{}", scope.blab, x.f)}},
+      std::move(sub_stabs),
+      Instr{Meta{std::format("\t.stabn 224,0,0,{}-{}", scope.elab, x.f)}});
+}
+
+} // namespace utils::compile
+
 /* Symbolic stack machine evaluator
 
      compile : env -> prg -> env * instr list
@@ -1956,6 +1997,8 @@ struct SMInstr {
 std::vector<Instr> compile(const Options &cmd, Env &env,
                            const std::vector<std::string> &imports,
                            const SMInstr &instr) {
+  using namespace utils::compile;
+
   const std::string stack_state = env.mode.is_debug ? env.print_stack() : "";
   if (env.is_barrier()) {
     return std::visit( //
@@ -2084,8 +2127,141 @@ std::vector<Instr> compile(const Options &cmd, Env &env,
               return {Sar1{x}, /*!!!*/ Binop{Opr::CMP, L{0}, x},
                       CJmp{y.s, y.l}};
             },
-            [&env](const SMInstr::BEGIN &x) -> std::vector<Instr> {
-              return {}; /* TODO */
+            [&env, &imports,
+             &cmd](const SMInstr::BEGIN &x) -> std::vector<Instr> {
+              {
+                const bool is_safepoint = safepoint_functions.count(x.f) != 0;
+                const bool is_vararg = vararg_functions.count(x.f) != 0;
+                if (is_safepoint && is_vararg) {
+                  failure("Function name %s is reserved for built-in",
+                          x.f.c_str());
+                }
+              }
+
+              const std::string name = (x.f[0] == 'L' ? x.f.substr(1) : x.f);
+
+              const auto stabs = [&env, &cmd, &x,
+                                  &name]() -> std::vector<Instr> {
+                if (!env.do_opt_stabs()) {
+                  return {};
+                }
+                if (x.f == "main") {
+                  return {Meta{"\t.type main, @function"}};
+                }
+
+                std::vector<Instr> func = {
+                    Meta{std::format("\t.type {}, @function", name)},
+                    Meta{
+                        std::format("\t.stabs \"{}:F1\",36,0,0,{}", name, x.f)},
+                };
+
+                std::vector<Instr> arguments =
+                    {} /* OCAML_VER: TODO: stabs for function arguments */;
+
+                std::vector<Instr> variables;
+                for (const auto &scope : x.scopes) {
+                  utils::insert(variables, stabs_scope(env, x, scope));
+                }
+
+                return utils::concat(std::move(func), std::move(arguments),
+                                     std::move(variables));
+              };
+
+              auto stabs_code = stabs();
+
+              const auto check_argc = [&env, &cmd, &x,
+                                       &name]() -> std::vector<Instr> {
+                if (x.f == cmd.topname) {
+                  return {};
+                }
+
+                auto argc_correct_label = x.f + "_argc_correct";
+                auto pat_addr = // TODO: check that the same string
+                    env.register_string(
+                        "Function %s called with incorrect arguments count. \
+                         Expected: %d. Actual: %d\\n");
+                auto name_addr = env.register_string(name);
+                const auto pat_loc = env.allocate();
+                const auto name_loc = env.allocate();
+                const auto expected_loc = env.allocate();
+                const auto actual_loc = env.allocate();
+                std::vector<Instr> fail_call =
+                    compile_call(env, "failure", 4, false);
+
+                env.pop();
+                return utils::concat(
+                    std::vector<Instr>{
+                        Meta{"# Check arguments count"},
+                        Binop{Opr::CMP, L{x.nargs}, r11},
+                        CJmp{"e", argc_correct_label},
+                        Mov{r11, actual_loc},
+                        Mov{L{x.nargs}, expected_loc},
+                        Mov{name_addr, name_loc},
+                        Mov{pat_addr, pat_loc},
+                    },
+                    std::move(fail_call), Instr{Label{argc_correct_label}});
+              };
+              auto check_argc_code = check_argc();
+              env.assert_empty_stack();
+              const bool has_closure = !x.closure.empty();
+              env.enter(x.f, x.nargs, x.nlocals, has_closure);
+              return utils::concat(std::move(stabs_code), Instr{Meta{"\t.cfi_startproc"}},
+                              (x.f == cmd.topname ? std::vector<Instr>{
+                         Mov{M{DataKind::D, Externality::I, Addressed::V, "init"}, rax},
+                         Binop{Opr::TEST, rax, rax},
+                         CJmp{"z", "continue"},
+                         Ret{},
+                         Label{"_ERROR"},
+                         Call{utils::labeled("binoperror")},
+                         Ret{},
+                         Label{"_ERROR2"},
+                         Call {utils::labeled("binoperror2")},
+                         Ret{},
+                         Label{"continue"},
+                         Mov {L {1}, M {DataKind::D, Externality::I, Addressed::V, "init"}},
+                                                 } :std::vector<Instr>{}), 
+                          std::vector<Instr>{
+                      Push{rbp},
+                      Meta{"\t.cfi_def_cfa_offset\t8"},
+                      Meta{"\t.cfi_offset 5, -8"},
+                      Mov{rsp, rbp},
+                      Meta{"\t.cfi_def_cfa_register\t5"},
+                      Binop {Opr::SUB, C{env.lsize()}, rsp},
+                      Mov {rdi, r12},
+                      Mov {rsi, r13},
+                      Mov {rcx, r14},
+                      Mov {rsp, rdi},
+                      Lea {filler, rsi},
+                      Mov {C{env.get_allocated_size()}, rcx},
+                      Repmovsl{},
+                      Mov {r12, rdi},
+                      Mov {r13, rsi},
+                      Mov {r14, rcx},
+                        },
+                        (x.f == "main"? std::vector<Instr>{
+                         /* Align stack as `main` function could be called misaligned */
+                         Mov {L{0xF}, rax},
+                         Binop{Opr::TEST, rsp, rax},
+                         CJmp{"z", "ALIGNED"},
+                         Push{filler},
+                         Label{"ALIGNED"},
+                         /* Initialize gc and arguments */
+                         Push{rdi},
+                         Push{rsi},
+                         Call{"__gc_init"},
+                         Pop{rsi},
+                         Pop{rdi},
+                         Call{"set_args"},
+                                      } :
+                        std::vector<Instr>{}),
+(x.f == cmd.topname ?
+                    // TODO: optimize filter
+  utils::transform<std::string, Instr>(utils::filter<std::string>(std::vector<std::string>{imports}, [](const auto& i) {  return i != "Std"; }),
+    [](const auto& i) -> Instr { return Call{std::format("init" + i)}; })
+: std::vector<Instr>{}),
+                        std::move(check_argc_code)
+                        );
+              // TODO
             },
             [&env](const SMInstr::END &y) -> std::vector<Instr> {
               const auto x = env.pop();
@@ -2241,4 +2417,5 @@ std::vector<Instr> compile(const Options &cmd, Env &env,
     result =
         utils::concat(std::move(result), compile(cmd, env, imports, instr));
   }
+  return result;
 }
