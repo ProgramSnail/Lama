@@ -16,6 +16,34 @@ extern "C" {
 #include <unordered_map>
 #include <vector>
 
+template <size_t N, typename... Args>
+  requires(N == 0)
+void call_func(void (*f)(), Args... args) {
+  s_push(((void *(*)(Args...))f)(args...));
+}
+
+template <size_t N, typename... Args>
+  requires(N != 0)
+void call_func(void (*f)(), Args... args) {
+  void *arg = s_pop();
+  call_func<N - 1, Args..., void *>(f, args..., arg);
+  // TODO: check that arg is added on the right position
+}
+
+template <size_t N, bool do_check = true>
+void call_anyarg_func(void (*f)(), size_t n) {
+  if constexpr (do_check) {
+    if (n > N) {
+      failure("too many function arguments (not supported): %zu > %zu\n", n, N);
+    }
+  }
+  if (n == N) {
+    call_func<N>(f);
+  } else if constexpr (N > 0) {
+    call_anyarg_func<N - 1, false>(f, n);
+  }
+}
+
 struct ModSymbolPos {
   uint32_t mod_id;
   size_t offset;
@@ -235,40 +263,12 @@ bool run_stdlib_func(const char *name, size_t args_count) {
             args_count);
   }
 
-  // TODO: work with varargs
-  if (it->second.is_vararg) {
-    failure("vararg stdlib functions are not supported yet");
-  }
-
   if (it->second.is_args) {
     void *ret = ((void *(*)(aint *))it->second.ptr)((aint *)s_peek());
     s_popn(it->second.args_count);
     s_push(ret);
   } else {
-    // TODO: check if arg order is not reversed
-    switch (it->second.args_count) {
-    case 0: {
-      s_push(((void *(*)())it->second.ptr)());
-    } break;
-    case 1: {
-      void *arg1 = s_pop();
-      s_push(((void *(*)(void *))it->second.ptr)(arg1));
-    } break;
-    case 2: {
-      void *arg1 = s_pop();
-      void *arg2 = s_pop();
-      s_push(((void *(*)(void *, void *))it->second.ptr)(arg1, arg2));
-    } break;
-    case 3: {
-      void *arg1 = s_pop();
-      void *arg2 = s_pop();
-      void *arg3 = s_pop();
-      s_push(((void *(*)(void *, void *, void *))it->second.ptr)(arg1, arg2,
-                                                                 arg3));
-    } break;
-    default:
-      failure("too many std function args (> 3)");
-    }
+    call_anyarg_func<20>(it->second.ptr, args_count);
   }
   return true;
 }

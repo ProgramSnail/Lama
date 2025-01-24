@@ -286,8 +286,7 @@ static inline const char *read_print_val(char **ip, const Bytefile &bf,
 }
 
 template <bool use_out>
-static inline void read_print_seq(char **ip, const Bytefile &bf,
-                                  std::ostream &out) {}
+static inline void read_print_seq(char **, const Bytefile &, std::ostream &) {}
 
 template <bool use_out, ArgT arg, ArgT... args>
 static inline void read_print_seq(char **ip, const Bytefile &bf,

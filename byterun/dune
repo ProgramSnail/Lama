@@ -44,4 +44,4 @@
   (mode
    (promote (until-clean)))
   (action
- (run g++ -Wall -Wextra -Iinclude/ -c %{src} -o %{target})))
+ (run g++ -Wall -Wextra -std=c++20 -Iinclude/ -c %{src} -o %{target})))
