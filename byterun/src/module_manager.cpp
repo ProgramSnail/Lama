@@ -1,5 +1,3 @@
-#include <functional>
-#include <iostream>
 extern "C" {
 #include "module_manager.h"
 #include "runtime_externs.h"
