@@ -103,6 +103,7 @@ type prg = insn list [@@deriving gt ~options:{ show }]
 
 module ByteCode = struct
   module M = Map.Make (String)
+  module IM = Map.Make (Int)
   module S = Set.Make (String)
 
   module StringTab = struct
@@ -184,7 +185,7 @@ module ByteCode = struct
     let add_public l = pubs := S.add l !pubs in
     let add_import l = imports := S.add l !imports in
     let add_fixup l = fixups := (Buffer.length code, l) :: !fixups in
-    let add_func_fixup c l = func_fixups := (c, Buffer.length code, l) :: !func_fixups in
+    let add_func_fixup l = func_fixups := (Buffer.length code, l) :: !func_fixups in
     let add_bytes = List.iter (fun x -> Buffer.add_char code @@ Char.chr x) in
     let add_ints =
       List.iter (fun x -> Buffer.add_int32_ne code @@ Int32.of_int x)
@@ -308,7 +309,7 @@ module ByteCode = struct
       | CALL (fn, n, _) ->
           (add_bytes [ (5 * 16) + 6 ];
           (* 1 = sizeof byte *)
-          add_func_fixup (Buffer.length code - 1) fn; 
+          add_func_fixup fn; 
           add_ints [ 0; n ])
       (* 0x57 s:32 n:32       *)
       | TAG (s, n) ->
@@ -337,17 +338,19 @@ module ByteCode = struct
           failwith
             (Printf.sprintf "Unexpected pattern: %s: %d" __FILE__ __LINE__)
     in
+    let substs = Stdlib.ref [] in
+    let add_subst c l = substs := (c, l) :: !substs in
     List.iter insn_code insns;
     add_bytes [ 255 ];
     let code = Buffer.to_bytes code in
     List.iter
-      (fun (cmd_ofs, addr_ofs, l) ->
+      (fun (addr_ofs, l) ->
         Bytes.set_int32_ne code addr_ofs
           (Int32.of_int
           @@
           try M.find l !lmap
           with Not_found ->
-            Bytes.set_int8 code cmd_ofs ((5 * 16) + 11); StringTab.add st l))
+            add_subst addr_ofs l; 0))
       !func_fixups;
     List.iter
       (fun (ofs, l) ->
@@ -373,10 +376,17 @@ module ByteCode = struct
               failwith (Printf.sprintf "ERROR: undefined label '%s'" l) ))
       @@ S.elements !pubs
     in
-    let st = Buffer.to_bytes st.StringTab.buffer in
+    let str_table = Buffer.to_bytes st.StringTab.buffer in
+    let subst_table = Buffer.create 1024 in
     let file = Buffer.create 1024 in
-    Buffer.add_int32_ne file (Int32.of_int @@ Bytes.length st);
+    List.iter
+      (fun (c, l) ->
+        Buffer.add_int32_ne subst_table @@ Int32.of_int c;
+        Buffer.add_string subst_table l)
+      !substs;
+    Buffer.add_int32_ne file (Int32.of_int @@ Bytes.length str_table);
     Buffer.add_int32_ne file (Int32.of_int @@ !glob_count);
+    Buffer.add_int32_ne file (Int32.of_int @@ Buffer.length subst_table);
     Buffer.add_int32_ne file (Int32.of_int @@ List.length imports);
     Buffer.add_int32_ne file (Int32.of_int @@ List.length pubs);
     List.iter
@@ -388,7 +398,8 @@ module ByteCode = struct
         Buffer.add_int32_ne file n;
         Buffer.add_int32_ne file o)
       pubs;
-    Buffer.add_bytes file st;
+    Buffer.add_bytes file str_table;
+    Buffer.add_bytes file @@ Buffer.to_bytes subst_table;
     Buffer.add_bytes file code;
     let f = open_out_bin (Printf.sprintf "%s.bc" cmd#basename) in
     Buffer.output_buffer f file;

@@ -43,7 +43,6 @@ void analyze(uint32_t mod_id) {
   };
 
   auto const func_to_visit_push = [&saved_current_ip, mod_id, &visited,
-                                   &current_stack_depth,
                                    &to_visit_func](size_t offset) {
     if (visited[offset] == NOT_VISITED) {
       visited[offset] = 0;
@@ -258,10 +257,11 @@ void analyze(uint32_t mod_id) {
       is_in_closure = (cmd == Cmd::CBEGIN);
       break;
     case Cmd::CLOSURE: {
-      uint closure_offset = ip_read_int_unsafe(&current_ip); // closure offset
-      size_t args_count = ip_read_int_unsafe(&current_ip);   // args count
+      /*uint closure_offset = */ ip_read_int_unsafe(
+          &current_ip);                                    // closure offset
+      size_t args_count = ip_read_int_unsafe(&current_ip); // args count
       extra_stack_during_opr = args_count;
-      for (aint i = 0; i < args_count; i++) {
+      for (size_t i = 0; i < args_count; i++) {
         aint arg_type = ip_read_byte_unsafe(&current_ip);
         aint arg_id = ip_read_int_unsafe(&current_ip);
         check_correct_var(arg_type, arg_id);
@@ -296,7 +296,7 @@ void analyze(uint32_t mod_id) {
       }
       ++current_stack_depth;
 
-      if (call_offset >= bf->code_size) {
+      if ((int)call_offset >= bf->code_size) {
         ip_failure(saved_current_ip, mod_id, "jump/call out of file");
       }
 
@@ -322,18 +322,18 @@ void analyze(uint32_t mod_id) {
       break;
     case Cmd::LINE:
       break;
-    case Cmd::CALLF: {
-      // TODO: find link to real function and replace call (need to save all
-      // modules in one space) <- optimization
+    // case Cmd::CALLF: {
+    //   // TODO: find link to real function and replace call (need to save all
+    //   // modules in one space) <- optimization
 
-      ip_read_int_unsafe(&current_ip); // function name (str)
-      uint args_count = ip_read_int_unsafe(&current_ip);
-      current_stack_depth -= args_count;
-      if (current_stack_depth < 0) {
-        ip_failure(saved_current_ip, mod_id, "not enough elements in stack");
-      }
-      ++current_stack_depth;
-    } break;
+    //   ip_read_int_unsafe(&current_ip); // function name (str)
+    //   uint args_count = ip_read_int_unsafe(&current_ip);
+    //   current_stack_depth -= args_count;
+    //   if (current_stack_depth < 0) {
+    //     ip_failure(saved_current_ip, mod_id, "not enough elements in stack");
+    //   }
+    //   ++current_stack_depth;
+    // } break;
     case Cmd::PATT:
       --current_stack_depth;
       if (l == CMD_PATT_STR) {
@@ -402,7 +402,7 @@ void analyze(uint32_t mod_id) {
       bool is_call = (cmd == Cmd::CLOSURE || cmd == Cmd::CALL);
 
       uint jmp_p = ip_read_int_unsafe(&current_ip);
-      if (jmp_p >= bf->code_size) {
+      if ((int)jmp_p >= bf->code_size) {
         // NOTE: maybe also should check that > begin (?)
         ip_failure(saved_current_ip, mod_id, "jump/call out of file");
       }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ostream>
+#include <vector>
 
 extern "C" {
 #include "parser.h"
@@ -35,7 +36,7 @@ enum class Cmd : int8_t {
   ARRAY,
   FAIL,
   LINE,
-  CALLF,
+  // CALLF,
   PATT,
   // NOTE: no longer used
   // Lread,
@@ -48,6 +49,8 @@ enum class Cmd : int8_t {
 };
 
 Bytefile *read_file(const char *fname);
+
+Bytefile *merge_files(const std::vector<Bytefile> &bytefiles);
 
 std::pair<Cmd, uint8_t> parse_command(char **ip, const Bytefile *bf);
 std::pair<Cmd, uint8_t> parse_command(char **ip, const Bytefile *bf,

@@ -7,17 +7,24 @@
 #include "../../runtime/runtime.h"
 #include "../../runtime/runtime_common.h"
 
+typedef struct {
+  uint offset;
+  char label[0];
+} Subst;
+
 /* The unpacked representation of bytecode file */
 typedef struct {
-  uint main_offset; /* offset of the function 'main'                        */
-  char *string_ptr; /* A pointer to the beginning of the string table */
-  int *imports_ptr; /* A pointer to the beginning of imports table    */
-  int *public_ptr;  /* A pointer to the beginning of publics table    */
-  char *code_ptr;   /* A pointer to the bytecode itself               */
-  int *global_ptr;  /* A pointer to the global area                   */
-  int code_size;    /* The size (in bytes) of code                    */
+  uint main_offset;  /* offset of the function 'main'                        */
+  char *string_ptr;  /* A pointer to the beginning of the string table */
+  int *imports_ptr;  /* A pointer to the beginning of imports table    */
+  int *public_ptr;   /* A pointer to the beginning of publics table    */
+  char *code_ptr;    /* A pointer to the bytecode itself               */
+  void **global_ptr; /* A pointer to the global area                   */
+  char *substs_ptr;  /* A pointer to the substs area                   */
+  int code_size;     /* The size (in bytes) of code                    */
   uint stringtab_size;   /* The size (in bytes) of the string table        */
   uint global_area_size; /* The size (in words) of global area             */
+  uint substs_area_size; /* number of required address substitutions          */
   uint imports_number;   /* The number of imports                          */
   uint public_symbols_number; /* The number of public symbols              */
   char buffer[0];
@@ -63,6 +70,10 @@ static inline size_t get_public_offset_unsafe(const Bytefile *bf, size_t i) {
 }
 
 // read from ip
+
+static inline void ip_write_int_unsafe(char *ip, int32_t x) {
+  *((int32_t *)ip) = x;
+}
 
 static inline uint16_t ip_read_half_int_unsafe(char **ip) {
   *ip += sizeof(uint16_t);
@@ -123,6 +134,13 @@ static inline size_t get_public_offset_safe(const Bytefile *f, size_t i) {
 }
 
 // read from ip
+
+static inline void ip_write_int_safe(char *ip, int32_t x, const Bytefile *bf) {
+  if (ip + sizeof(int32_t) > bf->code_ptr + bf->code_size) {
+    failure("last command is invalid, int parameter can not be read\n");
+  }
+  ip_write_int_unsafe(ip, x);
+}
 
 static inline uint16_t ip_read_half_int_safe(char **ip, const Bytefile *bf) {
   if (*ip + sizeof(uint16_t) > bf->code_ptr + bf->code_size) {

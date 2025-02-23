@@ -255,7 +255,7 @@ static inline void **var_by_category(enum VarCategory category, size_t id) {
                                                   // s.bf->global_area_size);
     }
 #endif
-    var = s.stack + STACK_SIZE - 1 - id;
+    var = s.bf->global_ptr + STACK_SIZE - 1 - id;
     break;
   case VAR_LOCAL:
 #ifndef WITH_CHECK

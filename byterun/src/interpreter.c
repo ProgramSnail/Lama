@@ -527,39 +527,39 @@ void run_mod(uint mod_id, int argc, char **argv) {
         // maybe some metainfo should be collected
         break;
 
-      case CMD_CTRL_CALLF: { // CALLF %s %d // call external function
-        const char *call_func_name = ip_read_string(&s.ip);
-        size_t args_count = ip_read_int(&s.ip); // args count
+      // case CMD_CTRL_CALLF: { // CALLF %s %d // call external function
+      //   const char *call_func_name = ip_read_string(&s.ip);
+      //   size_t args_count = ip_read_int(&s.ip); // args count
 
-        if (run_stdlib_func(call_func_name, args_count)) {
-          // case of stdlib function
-          break;
-        }
+      //   if (run_stdlib_func(call_func_name, args_count)) {
+      //     // case of stdlib function
+      //     break;
+      //   }
 
-        if (strcmp(call_func_name, ".array") == 0) {
-          call_Barray(args_count, &s.ip, buffer);
-          break;
-        }
+      //   if (strcmp(call_func_name, ".array") == 0) {
+      //     call_Barray(args_count, &s.ip, buffer);
+      //     break;
+      //   }
 
-        struct ModSearchResult func = mod_search_pub_symbol(call_func_name);
-        if (func.mod_file == NULL) {
-          failure("RUNTIME ERROR: external function <%s> with <%zu> args not found\n", call_func_name, args_count);
-        }
+      //   struct ModSearchResult func = mod_search_pub_symbol(call_func_name);
+      //   if (func.mod_file == NULL) {
+      //     failure("RUNTIME ERROR: external function <%s> with <%zu> args not found\n", call_func_name, args_count);
+      //   }
 
-        call_happened = true;
-        s.is_closure_call = false;
-        s.call_ip = s.ip;
-        s.call_module_id = s.current_module_id;
+      //   call_happened = true;
+      //   s.is_closure_call = false;
+      //   s.call_ip = s.ip;
+      //   s.call_module_id = s.current_module_id;
 
-        s.current_module_id = func.mod_id;
-        s.bf = func.mod_file;
+      //   s.current_module_id = func.mod_id;
+      //   s.bf = func.mod_file;
 
-        if (func.symbol_offset >= s.bf->code_size) {
-          s_failure(&s, "jump out of file");
-        }
-        s.ip = s.bf->code_ptr + func.symbol_offset;
-        break;
-      }
+      //   if (func.symbol_offset >= s.bf->code_size) {
+      //     s_failure(&s, "jump out of file");
+      //   }
+      //   s.ip = s.bf->code_ptr + func.symbol_offset;
+      //   break;
+      // }
 
       default:
         s_failure(&s, "invalid opcode"); // %d-%d\n", h, l);
