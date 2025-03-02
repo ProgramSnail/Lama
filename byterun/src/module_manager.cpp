@@ -440,57 +440,207 @@ BUILTIN id_by_builtin(const char *name) {
 }
 
 void run_stdlib_func(BUILTIN id, size_t args_count) {
-  static const StdFunc std_func[] = {
-      {.ptr = (void (*)()) & Luppercase, .args_count = 1},
-      {.ptr = (void (*)()) & Llowercase, .args_count = 1},
-      {.ptr = (void (*)()) & Lassert, .args_count = 2, .is_vararg = true},
-      {.ptr = (void (*)()) & Lstring, .args_count = 1, .is_args = true},
-      {.ptr = (void (*)()) & Llength, .args_count = 1},
-      {.ptr = (void (*)()) & LstringInt, .args_count = 1},
-      {.ptr = (void (*)()) & Lread, .args_count = 0},
-      {.ptr = (void (*)()) & Lwrite, .args_count = 1},
-      {.ptr = (void (*)()) & LmakeArray, .args_count = 1},
-      {.ptr = (void (*)()) & LmakeString, .args_count = 1},
-      {.ptr = (void (*)()) & Lstringcat, .args_count = 1, .is_args = true},
-      {.ptr = (void (*)()) & LmatchSubString, .args_count = 3},
-      {.ptr = (void (*)()) & Lsprintf, .args_count = 1, .is_vararg = true},
-      {.ptr = (void (*)()) & Lsubstring, .args_count = 3, .is_args = true},
-      {.ptr = (void (*)()) & Li__Infix_4343,
-       .args_count = 2,
-       .is_args = true}, // ++
-      {.ptr = (void (*)()) & Lclone, .args_count = 1, .is_args = true},
-      {.ptr = (void (*)()) & Lhash, .args_count = 1},
-      {.ptr = (void (*)()) & LtagHash, .args_count = 1},
-      {.ptr = (void (*)()) & Lcompare, .args_count = 2},
-      {.ptr = (void (*)()) & LflatCompare, .args_count = 2},
-      {.ptr = (void (*)()) & Lfst, .args_count = 1},
-      {.ptr = (void (*)()) & Lsnd, .args_count = 1},
-      {.ptr = (void (*)()) & Lhd, .args_count = 1},
-      {.ptr = (void (*)()) & Ltl, .args_count = 1},
-      {.ptr = (void (*)()) & LreadLine, .args_count = 0},
-      {.ptr = (void (*)()) & Lprintf, .args_count = 1, .is_vararg = true},
-      {.ptr = (void (*)()) & Lfopen, .args_count = 2},
-      {.ptr = (void (*)()) & Lfclose, .args_count = 1},
-      {.ptr = (void (*)()) & Lfread, .args_count = 1},
-      {.ptr = (void (*)()) & Lfwrite, .args_count = 2},
-      {.ptr = (void (*)()) & Lfexists, .args_count = 1},
-      {.ptr = (void (*)()) & Lfprintf, .args_count = 2, .is_vararg = true},
-      {.ptr = (void (*)()) & Lregexp, .args_count = 1},
-      {.ptr = (void (*)()) & LregexpMatch, .args_count = 3},
-      {.ptr = (void (*)()) & Lfailure, .args_count = 1, .is_vararg = true},
-      {.ptr = (void (*)()) & Lsystem, .args_count = 1},
-      {.ptr = (void (*)()) & LgetEnv, .args_count = 1},
-      {.ptr = (void (*)()) & Lrandom, .args_count = 1},
-      {.ptr = (void (*)()) & Ltime, .args_count = 0},
-  };
+  void *ret = NULL;
+  // TODO: deal with right pointers, etc.
+  switch (id) {
+  case BUILTIN_Luppercase:
+    ret = (void *)Luppercase(*s_nth(0));
+    s_popn(1);
+    s_push(ret);
+    break;
+  case BUILTIN_Llowercase:
+    ret = (void *)Llowercase(*s_nth(0));
+    s_popn(1);
+    s_push(ret);
+    break;
+  case BUILTIN_Lassert:
+    // .args_count = 2, .is_vararg = true
+    call_anyarg_func<20>((void (*)()) & Lassert, args_count);
+    break;
+  case BUILTIN_Lstring:
+    ret = Lstring(s_nth_i(0)); // .is_args = true
+    s_popn(1);
+    s_push(ret);
+    break;
+  case BUILTIN_Llength:
+    ret = (void *)Llength(*s_nth(0));
+    s_popn(1);
+    s_push(ret);
+    break;
+  case BUILTIN_LstringInt:
+    ret = (void *)LstringInt((char *)*s_nth(0));
+    s_popn(1);
+    s_push(ret);
+    break;
+  case BUILTIN_Lread:
+    ret = (void *)Lread();
+    s_push(ret);
+    break;
+  case BUILTIN_Lwrite:
+    ret = (void *)Lwrite(*s_nth_i(0));
+    s_popn(1);
+    s_push(ret);
+    break;
+  case BUILTIN_LmakeArray:
+    ret = (void *)LmakeArray(*s_nth_i(0));
+    s_popn(1);
+    s_push(ret);
+    break;
+  case BUILTIN_LmakeString:
+    ret = (void *)LmakeString(*s_nth_i(0));
+    s_popn(1);
+    s_push(ret);
+    break;
+  case BUILTIN_Lstringcat:
+    ret = (void *)Lstringcat(s_nth_i(0)); // .is_args = true;
+    s_popn(1);
+    s_push(ret);
+    break;
+  case BUILTIN_LmatchSubString:
+    ret = (void *)LmatchSubString((char *)*s_nth(0), (char *)*s_nth(1),
+                                  *s_nth_i(2));
+    s_popn(3);
+    s_push(ret);
+    break;
+  case BUILTIN_Lsprintf:
+    // .args_count = 1, .is_vararg = true
+    call_anyarg_func<20>((void (*)()) & Lsprintf, args_count);
+    break;
+  case BUILTIN_Lsubstring:
+    ret = (void *)Lsubstring(s_nth_i(0)); // .is_args = true;
+    s_popn(3);
+    s_push(ret);
+    break;
+  case BUILTIN_Li__Infix_4343:
+    ret = (void *)Li__Infix_4343(s_nth_i(0)); // .is_args = true
+    s_popn(2);
+    s_push(ret);
+    break; // ++
+  case BUILTIN_Lclone:
+    ret = (void *)Lclone(s_nth_i(0)); // .is_args = true;
+    s_popn(1);
+    s_push(ret);
+    break;
+  case BUILTIN_Lhash:
+    ret = (void *)Lhash(*s_nth(0));
+    s_popn(1);
+    s_push(ret);
+    break;
+  case BUILTIN_LtagHash:
+    ret = (void *)LtagHash((char *)*s_nth(0));
+    s_popn(1);
+    s_push(ret);
+    break;
+  case BUILTIN_Lcompare:
+    ret = (void *)Lcompare(*s_nth(0), *s_nth(1));
+    s_popn(2);
+    s_push(ret);
+    break;
+  case BUILTIN_LflatCompare:
+    ret = (void *)LflatCompare(*s_nth(0), *s_nth(1));
+    s_popn(2);
+    s_push(ret);
+    break;
+  case BUILTIN_Lfst:
+    ret = (void *)Lfst(*s_nth(0));
+    s_popn(1);
+    s_push(ret);
+    break;
+  case BUILTIN_Lsnd:
+    ret = (void *)Lsnd(*s_nth(0));
+    s_popn(1);
+    s_push(ret);
+    break;
+  case BUILTIN_Lhd:
+    ret = (void *)Lhd(*s_nth(0));
+    s_popn(1);
+    s_push(ret);
+    break;
+  case BUILTIN_Ltl:
+    ret = (void *)Ltl(*s_nth(0));
+    s_popn(1);
+    s_push(ret);
+    break;
+  case BUILTIN_LreadLine:
+    ret = (void *)LreadLine();
+    s_push(ret);
+    break;
+  case BUILTIN_Lprintf:
+    // .args_count = 1, .is_vararg = true
+    call_anyarg_func<20>((void (*)()) & Lprintf, args_count);
+    break;
+  case BUILTIN_Lfopen:
+    ret = (void *)Lfopen((char *)*s_nth(0), (char *)*s_nth(1));
+    s_popn(2);
+    s_push(ret);
+    break;
+  case BUILTIN_Lfclose:
+    /*ret = (void *)*/ Lfclose((FILE *)*s_nth(0));
+    s_popn(1);
+    // s_push(ret); // NOTE: ??
+    break;
+  case BUILTIN_Lfread:
+    ret = (void *)Lfread((char *)*s_nth(0));
+    s_popn(1);
+    s_push(ret);
+    break;
+  case BUILTIN_Lfwrite:
+    /*ret = (void *)*/ Lfwrite((char *)*s_nth(0), (char *)*s_nth(1));
+    s_popn(2);
+    // s_push(ret); // NOTE: ??
+    break;
+  case BUILTIN_Lfexists:
+    ret = (void *)Lfexists((char *)*s_nth(0));
+    s_popn(1);
+    s_push(ret);
+    break;
+  case BUILTIN_Lfprintf:
+    // .args_count = 2, .is_vararg = true
+    call_anyarg_func<20>((void (*)()) & Lfprintf, args_count);
+    break;
+  case BUILTIN_Lregexp:
+    ret = (void *)Lregexp((char *)*s_nth(0));
+    s_popn(1);
+    s_push(ret);
+    break;
+  case BUILTIN_LregexpMatch:
+    ret = (void *)LregexpMatch((struct re_pattern_buffer *)*s_nth(0),
+                               (char *)*s_nth(1), *s_nth_i(2));
+    s_popn(2);
+    s_push(ret);
+    break;
+  case BUILTIN_Lfailure:
+    // .args_count = 1, .is_vararg = true
+    call_anyarg_func<20>((void (*)()) & Lfailure, args_count);
+    break;
+  case BUILTIN_Lsystem:
+    ret = (void *)Lsystem((char *)*s_nth(0));
+    s_popn(1);
+    s_push(ret);
+    break;
+  case BUILTIN_LgetEnv:
+    ret = (void *)LgetEnv((char *)*s_nth(0));
+    s_popn(1);
+    s_push(ret);
+    break;
+  case BUILTIN_Lrandom:
+    ret = (void *)Lrandom(*s_nth_i(0));
+    s_popn(1);
+    s_push(ret);
+    break;
+  case BUILTIN_Ltime:
+    ret = (void *)Ltime();
+    s_push(ret);
+    break;
+  default:
+    failure("RUNTIME ERROR: stdlib function <%u> not found\n", id);
+    break;
+  }
   // some functions do use on args pointer
-
   // // NOTE: is checked on subst
   // if (id > sizeof(std_func) / sizeof(StdFunc)) {
   //   failure("RUNTIME ERROR: stdlib function <%u> not found\n", id);
   // }
-
-  const auto &func = std_func[id];
 
   // // TODO: move to bytecode verifier
   // if ((!func.is_vararg && func.args_count != args_count) ||
@@ -500,12 +650,4 @@ void run_stdlib_func(BUILTIN id, size_t args_count) {
   //           "expected (expected is <%s%zu>)\n",
   //           id, func.args_count, func.is_vararg ? ">=" : "=", args_count);
   // }
-
-  if (func.is_args) {
-    void *ret = ((void *(*)(aint *))func.ptr)((aint *)s_peek());
-    s_popn(func.args_count);
-    s_push(ret);
-  } else {
-    call_anyarg_func<20>(func.ptr, args_count);
-  }
 }

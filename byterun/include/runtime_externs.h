@@ -127,7 +127,7 @@ void LprintfPerror(char *s, ...);
 
 void Bmatch_failure(void *v, char *fname, aint line, aint col);
 
-void * /*Lstrcat*/ Li__Infix_4343(void *a, void *b);
+extern void * /*Lstrcat*/ Li__Infix_4343(aint *args /* void *a, void *b */);
 
 void *Lsprintf(char *fmt, ...);
 void *LgetEnv(char *var);

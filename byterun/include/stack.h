@@ -37,6 +37,8 @@ static inline void **s_nth(size_t n) {
   return (void **)__gc_stack_top + n;
 }
 
+static inline aint *s_nth_i(size_t n) { return (aint *)s_nth(n); }
+
 static inline void **s_peek() {
 #ifndef WITH_CHECK
   if ((void **)__gc_stack_top == s_top()) {
