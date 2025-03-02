@@ -440,85 +440,72 @@ BUILTIN id_by_builtin(const char *name) {
 }
 
 void run_stdlib_func(BUILTIN id, size_t args_count) {
-  static const std::map<BUILTIN, StdFunc> std_func = {
-      {BUILTIN_Luppercase, {.ptr = (void (*)()) & Luppercase, .args_count = 1}},
-      {BUILTIN_Llowercase, {.ptr = (void (*)()) & Llowercase, .args_count = 1}},
-      {BUILTIN_Lassert,
-       {.ptr = (void (*)()) & Lassert, .args_count = 2, .is_vararg = true}},
-      {BUILTIN_Lstring,
-       {.ptr = (void (*)()) & Lstring, .args_count = 1, .is_args = true}},
-      {BUILTIN_Llength, {.ptr = (void (*)()) & Llength, .args_count = 1}},
-      {BUILTIN_LstringInt, {.ptr = (void (*)()) & LstringInt, .args_count = 1}},
-      {BUILTIN_Lread, {.ptr = (void (*)()) & Lread, .args_count = 0}},
-      {BUILTIN_Lwrite, {.ptr = (void (*)()) & Lwrite, .args_count = 1}},
-      {BUILTIN_LmakeArray, {.ptr = (void (*)()) & LmakeArray, .args_count = 1}},
-      {BUILTIN_LmakeString,
-       {.ptr = (void (*)()) & LmakeString, .args_count = 1}},
-      {BUILTIN_Lstringcat,
-       {.ptr = (void (*)()) & Lstringcat, .args_count = 1, .is_args = true}},
-      {BUILTIN_LmatchSubString,
-       {.ptr = (void (*)()) & LmatchSubString, .args_count = 3}},
-      {BUILTIN_Lsprintf,
-       {.ptr = (void (*)()) & Lsprintf, .args_count = 1, .is_vararg = true}},
-      {BUILTIN_Lsubstring,
-       {.ptr = (void (*)()) & Lsubstring, .args_count = 3, .is_args = true}},
-      {BUILTIN_Li__Infix_4343,
-       {.ptr = (void (*)()) & Li__Infix_4343,
-        .args_count = 2,
-        .is_args = true}}, // ++
-      {BUILTIN_Lclone,
-       {.ptr = (void (*)()) & Lclone, .args_count = 1, .is_args = true}},
-      {BUILTIN_Lhash, {.ptr = (void (*)()) & Lhash, .args_count = 1}},
-      {BUILTIN_LtagHash, {.ptr = (void (*)()) & LtagHash, .args_count = 1}},
-      {BUILTIN_Lcompare, {.ptr = (void (*)()) & Lcompare, .args_count = 2}},
-      {BUILTIN_LflatCompare,
-       {.ptr = (void (*)()) & LflatCompare, .args_count = 2}},
-      {BUILTIN_Lfst, {.ptr = (void (*)()) & Lfst, .args_count = 1}},
-      {BUILTIN_Lsnd, {.ptr = (void (*)()) & Lsnd, .args_count = 1}},
-      {BUILTIN_Lhd, {.ptr = (void (*)()) & Lhd, .args_count = 1}},
-      {BUILTIN_Ltl, {.ptr = (void (*)()) & Ltl, .args_count = 1}},
-      {BUILTIN_LreadLine, {.ptr = (void (*)()) & LreadLine, .args_count = 0}},
-      {BUILTIN_Lprintf,
-       {.ptr = (void (*)()) & Lprintf, .args_count = 1, .is_vararg = true}},
-      {BUILTIN_Lfopen, {.ptr = (void (*)()) & Lfopen, .args_count = 2}},
-      {BUILTIN_Lfclose, {.ptr = (void (*)()) & Lfclose, .args_count = 1}},
-      {BUILTIN_Lfread, {.ptr = (void (*)()) & Lfread, .args_count = 1}},
-      {BUILTIN_Lfwrite, {.ptr = (void (*)()) & Lfwrite, .args_count = 2}},
-      {BUILTIN_Lfexists, {.ptr = (void (*)()) & Lfexists, .args_count = 1}},
-      {BUILTIN_Lfprintf,
-       {.ptr = (void (*)()) & Lfprintf, .args_count = 2, .is_vararg = true}},
-      {BUILTIN_Lregexp, {.ptr = (void (*)()) & Lregexp, .args_count = 1}},
-      {BUILTIN_LregexpMatch,
-       {.ptr = (void (*)()) & LregexpMatch, .args_count = 3}},
-      {BUILTIN_Lfailure,
-       {.ptr = (void (*)()) & Lfailure, .args_count = 1, .is_vararg = true}},
-      {BUILTIN_Lsystem, {.ptr = (void (*)()) & Lsystem, .args_count = 1}},
-      {BUILTIN_LgetEnv, {.ptr = (void (*)()) & LgetEnv, .args_count = 1}},
-      {BUILTIN_Lrandom, {.ptr = (void (*)()) & Lrandom, .args_count = 1}},
-      {BUILTIN_Ltime, {.ptr = (void (*)()) & Ltime, .args_count = 0}},
+  static const StdFunc std_func[] = {
+      {.ptr = (void (*)()) & Luppercase, .args_count = 1},
+      {.ptr = (void (*)()) & Llowercase, .args_count = 1},
+      {.ptr = (void (*)()) & Lassert, .args_count = 2, .is_vararg = true},
+      {.ptr = (void (*)()) & Lstring, .args_count = 1, .is_args = true},
+      {.ptr = (void (*)()) & Llength, .args_count = 1},
+      {.ptr = (void (*)()) & LstringInt, .args_count = 1},
+      {.ptr = (void (*)()) & Lread, .args_count = 0},
+      {.ptr = (void (*)()) & Lwrite, .args_count = 1},
+      {.ptr = (void (*)()) & LmakeArray, .args_count = 1},
+      {.ptr = (void (*)()) & LmakeString, .args_count = 1},
+      {.ptr = (void (*)()) & Lstringcat, .args_count = 1, .is_args = true},
+      {.ptr = (void (*)()) & LmatchSubString, .args_count = 3},
+      {.ptr = (void (*)()) & Lsprintf, .args_count = 1, .is_vararg = true},
+      {.ptr = (void (*)()) & Lsubstring, .args_count = 3, .is_args = true},
+      {.ptr = (void (*)()) & Li__Infix_4343,
+       .args_count = 2,
+       .is_args = true}, // ++
+      {.ptr = (void (*)()) & Lclone, .args_count = 1, .is_args = true},
+      {.ptr = (void (*)()) & Lhash, .args_count = 1},
+      {.ptr = (void (*)()) & LtagHash, .args_count = 1},
+      {.ptr = (void (*)()) & Lcompare, .args_count = 2},
+      {.ptr = (void (*)()) & LflatCompare, .args_count = 2},
+      {.ptr = (void (*)()) & Lfst, .args_count = 1},
+      {.ptr = (void (*)()) & Lsnd, .args_count = 1},
+      {.ptr = (void (*)()) & Lhd, .args_count = 1},
+      {.ptr = (void (*)()) & Ltl, .args_count = 1},
+      {.ptr = (void (*)()) & LreadLine, .args_count = 0},
+      {.ptr = (void (*)()) & Lprintf, .args_count = 1, .is_vararg = true},
+      {.ptr = (void (*)()) & Lfopen, .args_count = 2},
+      {.ptr = (void (*)()) & Lfclose, .args_count = 1},
+      {.ptr = (void (*)()) & Lfread, .args_count = 1},
+      {.ptr = (void (*)()) & Lfwrite, .args_count = 2},
+      {.ptr = (void (*)()) & Lfexists, .args_count = 1},
+      {.ptr = (void (*)()) & Lfprintf, .args_count = 2, .is_vararg = true},
+      {.ptr = (void (*)()) & Lregexp, .args_count = 1},
+      {.ptr = (void (*)()) & LregexpMatch, .args_count = 3},
+      {.ptr = (void (*)()) & Lfailure, .args_count = 1, .is_vararg = true},
+      {.ptr = (void (*)()) & Lsystem, .args_count = 1},
+      {.ptr = (void (*)()) & LgetEnv, .args_count = 1},
+      {.ptr = (void (*)()) & Lrandom, .args_count = 1},
+      {.ptr = (void (*)()) & Ltime, .args_count = 0},
   };
   // some functions do use on args pointer
 
-  const auto it = std_func.find(id);
+  // // NOTE: is checked on subst
+  // if (id > sizeof(std_func) / sizeof(StdFunc)) {
+  //   failure("RUNTIME ERROR: stdlib function <%u> not found\n", id);
+  // }
 
-  if (it == std_func.end()) {
-    failure("RUNTIME ERROR: stdlib function <%u> not found\n", id);
-  }
+  const auto &func = std_func[id];
 
-  // TODO: move to bytecode verifier
-  if ((!it->second.is_vararg && it->second.args_count != args_count) ||
-      it->second.args_count > args_count) {
-    failure("RUNTIME ERROR: stdlib function <%u> argument count <%zu> is not "
-            "expected (expected is <%s%zu>)\n",
-            id, it->second.args_count, it->second.is_vararg ? ">=" : "=",
-            args_count);
-  }
+  // // TODO: move to bytecode verifier
+  // if ((!func.is_vararg && func.args_count != args_count) ||
+  //     func.args_count > args_count) {
+  //   failure("RUNTIME ERROR: stdlib function <%u> argument count <%zu> is not
+  //   "
+  //           "expected (expected is <%s%zu>)\n",
+  //           id, func.args_count, func.is_vararg ? ">=" : "=", args_count);
+  // }
 
-  if (it->second.is_args) {
-    void *ret = ((void *(*)(aint *))it->second.ptr)((aint *)s_peek());
-    s_popn(it->second.args_count);
+  if (func.is_args) {
+    void *ret = ((void *(*)(aint *))func.ptr)((aint *)s_peek());
+    s_popn(func.args_count);
     s_push(ret);
   } else {
-    call_anyarg_func<20>(it->second.ptr, args_count);
+    call_anyarg_func<20>(func.ptr, args_count);
   }
 }

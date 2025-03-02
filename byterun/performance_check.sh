@@ -26,8 +26,9 @@ time ./byterun.exe -p Sort.bc > /dev/null
 echo "Byterun:"
 time ./byterun.exe -vi Sort.bc > /dev/null
 
-echo "Byterun (verefication only):"
-time ./byterun.exe -v Sort.bc > /dev/null
+# # NOTE: is not possible for now
+# echo "Byterun (verefication only):"
+# time ./byterun.exe -v Sort.bc > /dev/null
 
 echo "Byterun (run only):"
 time ./byterun.exe -i Sort.bc > /dev/null
