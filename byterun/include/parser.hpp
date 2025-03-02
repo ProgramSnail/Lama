@@ -36,7 +36,7 @@ enum class Cmd : int8_t {
   ARRAY,
   FAIL,
   LINE,
-  // CALLF,
+  BUILTIN,
   PATT,
   // NOTE: no longer used
   // Lread,
@@ -49,8 +49,6 @@ enum class Cmd : int8_t {
 };
 
 Bytefile *read_file(const char *fname);
-
-Bytefile *merge_files(const std::vector<Bytefile> &bytefiles);
 
 std::pair<Cmd, uint8_t> parse_command(char **ip, const Bytefile *bf);
 std::pair<Cmd, uint8_t> parse_command(char **ip, const Bytefile *bf,

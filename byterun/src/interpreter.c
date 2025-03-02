@@ -58,7 +58,7 @@ void run_init(size_t *stack) {
   init_state(&s, (void**)stack);
 }
 
-void run_prepare_exec(int argc, char **argv) {
+void set_argc_argv(int argc, char **argv) {
     s_push_i(BOX(argc));
 #ifdef DEBUG_VERSION
     printf("- argc: %i\n", argc);
@@ -80,38 +80,7 @@ void run_prepare_exec(int argc, char **argv) {
 #endif
 }
 
-void run_mod_rec(uint mod_id, int argc, char **argv, bool do_verification) {
-  Bytefile* mod = mod_get(mod_id);
-#ifdef DEBUG_VERSION
-  printf("- run mod rec, %i imports\n", mod->imports_number);
-#endif
-  for (size_t i = 0; i < mod->imports_number; ++i) {
-    const char* import_str = get_import_safe(mod, i);
-    if (find_mod_loaded(import_str) < 0 && strcmp(import_str, "Std") != 0) { // not loaded
-#ifdef DEBUG_VERSION
-      printf("- mod load <%s>\n", import_str);
-#endif
-      int32_t import_mod = mod_load(import_str, do_verification);
-      if (import_mod < 0) {
-        failure("module <%s> not found\n", import_str);
-      }
-#ifdef DEBUG_VERSION
-      printf("- mod run <%s>\n", import_str);
-#endif
-      run_mod_rec(import_mod, argc, argv, do_verification);
-    }
-  }
-
-  init_mod_state(mod_id, &s);
-  init_mod_state_globals(&s);
-
-  run_prepare_exec(argc, argv); // args for module main
-  run_mod(mod_id, argc, argv);
-
-  cleanup_state(&s);
-}
-
-static inline void call_Barray(size_t elem_count, char** ip, void** buffer) {
+void call_Barray(size_t elem_count, char** ip, void** buffer) {
     // size_t elem_count = ip_read_int(ip);
 
     bool use_new_buffer = (elem_count > BUFFER_SIZE);
@@ -149,17 +118,17 @@ static inline void call_Barray(size_t elem_count, char** ip, void** buffer) {
     }
 }
 
-void run_mod(uint mod_id, int argc, char **argv) {
+void run_main(Bytefile* bf, int argc, char **argv) {
 #ifdef DEBUG_VERSION
-  printf("--- module init state ---\n");
+  printf("--- init state ---\n");
 #endif
 
-  init_mod_state(mod_id, &s);
+  prepare_state(bf, &s);
 
   void *buffer[BUFFER_SIZE];
 
 #ifdef DEBUG_VERSION
-  printf("--- module run begin ---\n");
+  printf("--- run begin ---\n");
 #endif
 
   do {
@@ -178,9 +147,9 @@ void run_mod(uint mod_id, int argc, char **argv) {
     s.instr_ip = s.ip;
     uint8_t x = ip_read_byte(&s.ip), h = (x & 0xF0) >> 4, l = x & 0x0F;
 
-#ifdef DEBUG_VERSION
+// #ifdef DEBUG_VERSION
     printf("0x%.8x: %s\n", s.ip - s.bf->code_ptr - 1, read_cmd(s.ip - 1, s.bf));
-#endif
+// #endif
 
     switch (h) {
     case CMD_EXIT:
@@ -207,7 +176,7 @@ void run_mod(uint mod_id, int argc, char **argv) {
 #undef BINOP_OPR
 
         default:
-          s_failure(&s, "invalid opcode"); // %d-%d\n", h, l);
+          s_failure(&s, "interpreter: invalid opcode"); // %d-%d\n", h, l);
           break;
         }
       }
@@ -343,7 +312,7 @@ void run_mod(uint mod_id, int argc, char **argv) {
       } break;
 
       default:
-        s_failure(&s, "invalid opcode"); // %d-%d\n", h, l);
+        s_failure(&s, "interpreter: basic, invalid opcode"); // %d-%d\n", h, l);
       }
       break;
 
@@ -407,7 +376,7 @@ void run_mod(uint mod_id, int argc, char **argv) {
           s_failure(&s, "begin should only be called after call");
         }
 #endif
-        s_enter_f(s.call_ip /*ip from call*/, s.call_module_id,
+        s_enter_f(s.call_ip /*ip from call*/,
                   s.is_closure_call, args_sz, locals_sz);
 #ifndef WITH_CHECK
         if ((void **)__gc_stack_top + (aint)max_additional_stack_sz - 1 <= s.stack) {
@@ -431,7 +400,7 @@ void run_mod(uint mod_id, int argc, char **argv) {
           s_failure(&s, "begin should only be called after call");
         }
 #endif
-        s_enter_f(s.call_ip /*ip from call*/, s.call_module_id,
+        s_enter_f(s.call_ip /*ip from call*/,
                   s.is_closure_call, args_sz, locals_sz);
 #ifdef WITH_CHECK
         if ((void **)__gc_stack_top + (aint)max_additional_stack_sz - 1 <= s.stack) {
@@ -474,7 +443,6 @@ void run_mod(uint mod_id, int argc, char **argv) {
         call_happened = true;
         s.is_closure_call = true;
         s.call_ip = s.ip;
-        s.call_module_id = s.current_module_id;
 
         s.ip = (char*)Belem(*s_nth(args_count), BOX(0)); // use offset instead ??
         break;
@@ -487,7 +455,6 @@ void run_mod(uint mod_id, int argc, char **argv) {
         call_happened = true;
         s.is_closure_call = false;
         s.call_ip = s.ip;
-        s.call_module_id = s.current_module_id;
 
 #ifndef WITH_CHECK
         if (call_p >= s.bf->code_size) {
@@ -527,42 +494,29 @@ void run_mod(uint mod_id, int argc, char **argv) {
         // maybe some metainfo should be collected
         break;
 
-      // case CMD_CTRL_CALLF: { // CALLF %s %d // call external function
-      //   const char *call_func_name = ip_read_string(&s.ip);
-      //   size_t args_count = ip_read_int(&s.ip); // args count
+      case CMD_CTRL_BUILTIN: { // BUILTIN %d %d // call builtin
+        size_t builtin_id = ip_read_int(&s.ip);
+        size_t args_count = ip_read_int(&s.ip); // args count
 
-      //   if (run_stdlib_func(call_func_name, args_count)) {
-      //     // case of stdlib function
-      //     break;
-      //   }
+        printf("builtin id: %zu\n", builtin_id);
+// #ifndef WITH_CHECK
+        if (builtin_id >= BUILTIN_NONE) {
+          s_failure(&s, "invalid builtin");
+        }
+// #endif
 
-      //   if (strcmp(call_func_name, ".array") == 0) {
-      //     call_Barray(args_count, &s.ip, buffer);
-      //     break;
-      //   }
-
-      //   struct ModSearchResult func = mod_search_pub_symbol(call_func_name);
-      //   if (func.mod_file == NULL) {
-      //     failure("RUNTIME ERROR: external function <%s> with <%zu> args not found\n", call_func_name, args_count);
-      //   }
-
-      //   call_happened = true;
-      //   s.is_closure_call = false;
-      //   s.call_ip = s.ip;
-      //   s.call_module_id = s.current_module_id;
-
-      //   s.current_module_id = func.mod_id;
-      //   s.bf = func.mod_file;
-
-      //   if (func.symbol_offset >= s.bf->code_size) {
-      //     s_failure(&s, "jump out of file");
-      //   }
-      //   s.ip = s.bf->code_ptr + func.symbol_offset;
-      //   break;
-      // }
+        if (builtin_id == BUILTIN_Barray) {
+          call_Barray(args_count, &s.ip, buffer);
+        } else {
+          run_stdlib_func(builtin_id, args_count);
+        }
+        printf("builtin end\n");
+        fflush(stdout);
+        break;
+      }
 
       default:
-        s_failure(&s, "invalid opcode"); // %d-%d\n", h, l);
+        s_failure(&s, "interpreter: ctrl, invalid opcode"); // %d-%d\n", h, l);
       }
       break;
 
@@ -650,7 +604,6 @@ void run_mod(uint mod_id, int argc, char **argv) {
     if (!call_happened) {
       s.is_closure_call = false;
       s.call_ip = NULL;
-      s.call_module_id = 0;
     }
 
     if (s.fp == NULL) {

@@ -5,26 +5,55 @@
 
 #include "utils.h"
 
-struct ModSearchResult {
-  size_t symbol_offset;
-  uint32_t mod_id;
-  Bytefile *mod_file; // = NULL => not found
+Bytefile *run_with_imports(Bytefile *root, int argc, char **argv,
+                           bool do_verification);
+
+// ---
+
+enum BUILTIN : uint {
+  BUILTIN_Luppercase,
+  BUILTIN_Llowercase,
+  BUILTIN_Lassert,
+  BUILTIN_Lstring,
+  BUILTIN_Llength,
+  BUILTIN_LstringInt,
+  BUILTIN_Lread,
+  BUILTIN_Lwrite,
+  BUILTIN_LmakeArray,
+  BUILTIN_LmakeString,
+  BUILTIN_Lstringcat,
+  BUILTIN_LmatchSubString,
+  BUILTIN_Lsprintf,
+  BUILTIN_Lsubstring,
+  BUILTIN_Li__Infix_4343, // ++
+  BUILTIN_Lclone,
+  BUILTIN_Lhash,
+  BUILTIN_LtagHash,
+  BUILTIN_Lcompare,
+  BUILTIN_LflatCompare,
+  BUILTIN_Lfst,
+  BUILTIN_Lsnd,
+  BUILTIN_Lhd,
+  BUILTIN_Ltl,
+  BUILTIN_Lprintf,
+  BUILTIN_LreadLine,
+  BUILTIN_Lfopen,
+  BUILTIN_Lfclose,
+  BUILTIN_Lfread,
+  BUILTIN_Lfwrite,
+  BUILTIN_Lfexists,
+  BUILTIN_Lfprintf,
+  BUILTIN_Lregexp,
+  BUILTIN_LregexpMatch,
+  BUILTIN_Lfailure,
+  BUILTIN_Lsystem,
+  BUILTIN_LgetEnv,
+  BUILTIN_Lrandom,
+  BUILTIN_Ltime,
+  BUILTIN_Barray, // can't be run with run_stdlib_func
+  BUILTIN_NONE,
 };
 
-void mod_cleanup();
+enum BUILTIN id_by_builtin(const char *name);
 
-void mod_add_search_path(const char *path);
-
-const char *mod_get_name(uint32_t id);
-
-Bytefile *mod_get(uint32_t id);
-
-int32_t find_mod_loaded(const char *name); // < 0 => not found
-
-int32_t mod_load(const char *name, bool do_verification); // < 0 => not found
-
-uint32_t mod_add(Bytefile *module, bool do_verification);
-
-struct ModSearchResult mod_search_pub_symbol(const char *name);
-
-bool run_stdlib_func(const char *name, size_t args_count);
+void run_stdlib_func(enum BUILTIN id, size_t args_count);

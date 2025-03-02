@@ -5,7 +5,7 @@
   (:main src/cli.cpp)
   (:parser src/parser.cpp)
   (:analyzer src/analyzer.cpp)
-  (:module_manager module_manager.o)
+  (:module_manager src/module_manager.cpp)
   (:obj types.o interpreter.o)
   (:runtime ../runtime/runtime.a))
  (mode
@@ -34,14 +34,3 @@
   (promote (until-clean)))
  (action
   (run gcc -Wall -Wextra -Iinclude/ -DWITH_CHECK -c %{src} -o %{target})))
-
-(rule
-(target module_manager.o)
-(deps
- (:include (source_tree include))
- (:src src/module_manager.cpp)
-   (:runtime ../runtime/runtime.a))
-  (mode
-   (promote (until-clean)))
-  (action
- (run g++ -Wall -Wextra -std=c++20 -Iinclude/ -c %{src} -o %{target})))

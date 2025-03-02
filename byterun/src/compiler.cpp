@@ -328,7 +328,7 @@ struct ArgumentLocation {
 };
 
 /* We need to know the word size to calculate offsets correctly */
-constexpr auto word_size = 8;
+constexpr size_t word_size = 8;
 
 const Register::T &as_register(const Opnd &opnd) {
   return std::visit(
@@ -1278,7 +1278,7 @@ std::vector<Instr> compile_binop(Env &env, Opr op) {
   switch (op) {
   case Opr::DIV:
     return with_rdx([&x, &y](const auto &rdx) -> std::vector<Instr> {
-      return {Mov{y, rax}, Sar1{rax}, Binop{"^", rdx, rdx},
+      return {Mov{y, rax}, Sar1{rax}, Binop{Opr::XOR, rdx, rdx},
               Cltd{},      Sar1{x},   IDiv{x},
               Sal1{rax},   Or1{rax},  Mov{rax, y}};
     });
@@ -1301,7 +1301,7 @@ std::vector<Instr> compile_binop(Env &env, Opr op) {
                    return {
                        Binop{Opr::XOR, rax, rax},
                        Mov{x, extra},
-                       Binop{"cmp", extra, y},
+                       Binop{Opr::CMP, extra, y},
                        Set{suffix(op), Registers::rax},
                        Sal1{rax},
                        Or1{rax},

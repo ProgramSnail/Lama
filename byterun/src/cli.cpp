@@ -42,42 +42,32 @@ int main(int argc, char **argv) {
   }
 
 #ifdef DEBUG_VERSION
-  std::cerr << "- read code file" << std::endl;
+  std::cout << "- read code file" << std::endl;
 #endif
 
   Bytefile *f = read_file(argv[2]);
   if (do_print) {
 #ifdef DEBUG_VERSION
-    std::cerr << "- print code file" << std::endl;
+    std::cout << "- print code file" << std::endl;
 #endif
 
     print_file(*f, std::cout);
-    free(f);
   }
   if (do_verification || do_interpretation) {
 #ifdef DEBUG_VERSION
-    std::cerr << "- init stack" << std::endl;
+    std::cout << "- init stack" << std::endl;
 #endif
 
     size_t stack[STACK_SIZE];
     run_init(stack);
 
 #ifdef DEBUG_VERSION
-    std::cerr << "- add main module" << std::endl;
+    std::cout << "- run with imports" << std::endl;
 #endif
 
-    uint main_mod_id = mod_add(f, do_verification);
-
-    if (do_interpretation) {
-#ifdef DEBUG_VERSION
-      std::cerr << "- start interpretation" << std::endl;
-#endif
-
-      run_mod_rec(main_mod_id, argc - 2, argv + 2, do_verification);
-    }
+    f = run_with_imports(f, argc - 2, argv + 2, do_verification);
   }
 
-  mod_cleanup();
-
+  free(f);
   return 0;
 }

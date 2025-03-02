@@ -23,14 +23,13 @@ static const size_t MAX_ARRAY_SIZE = 0x11111110;
 // ------ Frame ------
 
 struct Frame {
-  void *closure;       // where closure value stored if needed
-  void *ret;           // store returned value [gc pointer]
-  char *rp;            // ret instruction pointer [not gc pointer]
-  void **prev_fp;      // ret function frame pointer [boxed value, not gc
-                       // pointer]
-  aint ret_module_box; // module to return [boxed value, not gc pointer]
-  aint args_sz_box;    // store arguments [boxed value, not gc pointer]
-  aint locals_sz_box;  // store locals [boxed value, not gc pointer]
+  void *closure;      // where closure value stored if needed
+  void *ret;          // store returned value [gc pointer]
+  char *rp;           // ret instruction pointer [not gc pointer]
+  void **prev_fp;     // ret function frame pointer [boxed value, not gc
+                      // pointer]
+  aint args_sz_box;   // store arguments [boxed value, not gc pointer]
+  aint locals_sz_box; // store locals [boxed value, not gc pointer]
 };
 
 // NOTE: stack is [top -> bottom]
@@ -62,33 +61,27 @@ struct State {
 
   bool is_closure_call;
 
-  uint current_module_id;
-  uint call_module_id;
-
   char *ip;       // instruction pointer
   char *instr_ip; // poiter to current instruction
   char *call_ip;  // prev instruction pointer (to remember jmp locations)
 };
 
 void init_state(struct State *s, void **stack);
-void init_mod_state(uint mod_id, struct State *s);
-void init_mod_state_globals(struct State *s);
+void prepare_state(Bytefile *bf, struct State *s);
+void push_globals(struct State *s);
 void cleanup_state(struct State *state);
 
 static inline void s_failure(struct State *s, const char *msg) {
-  exec_failure(read_cmd(s->instr_ip, s->bf), mod_get_name(s->current_module_id),
-               s->current_line, s->instr_ip - s->bf->code_ptr, msg);
+  exec_failure(read_cmd(s->instr_ip, s->bf), s->current_line,
+               s->instr_ip - s->bf->code_ptr, msg);
 }
 
-static inline void ip_failure(char *ip, uint32_t mod_id, const char *msg) {
-  Bytefile *bf = mod_get(mod_id);
-  exec_failure(read_cmd(ip, bf), mod_get_name(mod_id), 0, ip - bf->code_ptr,
-               msg);
+static inline void ip_failure(char *ip, Bytefile *bf, const char *msg) {
+  exec_failure(read_cmd(ip, bf), 0, ip - bf->code_ptr, msg);
 }
 
-static inline void ip_safe_failure(char *ip, uint32_t mod_id, const char *msg) {
-  Bytefile *bf = mod_get(mod_id);
-  exec_failure("_UNDEF_", mod_get_name(mod_id), 0, ip - bf->code_ptr, msg);
+static inline void ip_safe_failure(char *ip, Bytefile *bf, const char *msg) {
+  exec_failure("_UNDEF_", 0, ip - bf->code_ptr, msg);
 }
 
 // ------ VarCategory ------
@@ -164,7 +157,7 @@ enum CMD_CTRLS {
   CMD_CTRL_ARRAY,
   CMD_CTRL_FAIL,
   CMD_CTRL_LINE,
-  // CMD_CTRL_CALLF,
+  CMD_CTRL_BUILTIN,
 };
 
 enum CMD_PATTS {

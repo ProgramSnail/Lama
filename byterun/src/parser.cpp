@@ -72,6 +72,8 @@ Bytefile *read_file(const char *fname) {
   char *file_begin = (char *)file + additional_size;
   char *file_end = file_begin + size;
 
+  size_t buffer_size = size + additional_size - sizeof(Bytefile);
+
   if (file == 0) {
     failure("unable to allocate memory to store file data\n");
   }
@@ -85,7 +87,7 @@ Bytefile *read_file(const char *fname) {
   fclose(f);
 
   size_t imports_size = file->imports_number * sizeof(int);
-  size_t public_symbols_size = file->public_symbols_number * 2 * sizeof(int);
+  size_t public_symbols_size = calc_publics_size(file->public_symbols_number);
 
   size_t strings_buffer_offset = public_symbols_size + imports_size;
   if (file->buffer + strings_buffer_offset >= file_end) {
@@ -98,7 +100,7 @@ Bytefile *read_file(const char *fname) {
 
   size_t substs_buffer_offset = strings_buffer_offset + file->stringtab_size;
   file->substs_ptr = file->buffer + substs_buffer_offset;
-  if ((char *)file->substs_ptr + file->substs_area_size > file_end) {
+  if (file->substs_ptr + file->substs_area_size > file_end) {
     failure("substitutions table is out of the file size\n");
   }
 
@@ -106,7 +108,9 @@ Bytefile *read_file(const char *fname) {
   //     file->string_ptr[file->stringtab_size - 1] != 0) {
   //   failure("strings table is not zero-ended\n");
   // }
-  file->code_size = size - substs_buffer_offset - file->substs_area_size;
+  file->code_ptr = file->substs_ptr + file->substs_area_size;
+  // file->code_size = size - substs_buffer_offset - file->substs_area_size;
+  file->code_size = buffer_size - (file->code_ptr - file->buffer);
 
   if (file->code_size < 0 || public_symbols_size < 0 ||
       file->stringtab_size < 0) {
@@ -116,142 +120,9 @@ Bytefile *read_file(const char *fname) {
   file->imports_ptr = (int *)file->buffer;
   file->public_ptr = (int *)(file->buffer + imports_size);
   file->global_ptr = NULL; // is allocated on module run on stack
-  file->code_ptr = file->string_ptr + file->stringtab_size;
   // file->global_ptr  = (int*) calloc (file->global_area_size, sizeof (int));
 
   return file;
-}
-
-struct Offsets {
-  size_t strings;
-  size_t globals;
-  size_t code;
-};
-
-void rewrite_code_with_offsets(Bytefile *bytefile, const Offsets &offsets) {
-  char *ip = bytefile->code_ptr;
-  while (ip - bytefile->code_ptr < bytefile->code_size) {
-    const auto [cmd, l] = parse_command(&ip, bytefile);
-
-    char *cmd_ip = ip;
-
-    switch (cmd) {
-    case Cmd::STRING:
-      ip_write_int_unsafe(cmd_ip, ip_read_int_unsafe(&ip) +
-                                      offsets.strings); // TODO: check
-      break;
-    case Cmd::JMP:
-    case Cmd::CJMPnz:
-    case Cmd::CJMPz:
-    case Cmd::CLOSURE:
-    case Cmd::CALL:
-      ip_write_int_unsafe(cmd_ip, ip_read_int_unsafe(&ip) +
-                                      offsets.code); // TODO: check
-      break;
-    default:
-      break;
-    }
-  }
-}
-
-void subst_in_code(Bytefile *bytefile,
-                   const std::unordered_map<std::string, size_t> &publics) {
-  for (size_t i = 0; i < bytefile->substs_area_size;) {
-    if (i + sizeof(uint32_t) >= bytefile->substs_area_size) {
-      failure("substitution %zu offset is out of area", i);
-    }
-
-    uint32_t offset = *(uint32_t *)(bytefile->substs_ptr + i);
-    i += sizeof(uint32_t);
-    const char *name = bytefile->substs_ptr + i;
-
-    i += strlen(name);
-
-    if (i > bytefile->substs_area_size) {
-      failure("substitution %zu name is out of area", i);
-    }
-
-    const auto it = publics.find(name);
-    if (it == publics.end()) {
-      failure("public name for substitution is not found: %s", name);
-    }
-
-    *(uint32_t *)(bytefile->code_ptr + offset) = it->second;
-    // TODO: check: +4 to match ?
-  }
-}
-
-Offsets calc_merge_sizes(const std::vector<Bytefile *> &bytefiles) {
-  Offsets sizes{.strings = 0, .globals = 0, .code = 0};
-  for (size_t i = 0; i < bytefiles.size(); ++i) {
-    sizes.strings += bytefiles[i]->stringtab_size;
-    sizes.strings += bytefiles[i]->global_area_size;
-    sizes.strings += bytefiles[i]->code_size;
-  }
-  return sizes;
-}
-
-Bytefile *merge_files(std::vector<Bytefile *> &&bytefiles) {
-  Offsets sizes = calc_merge_sizes(bytefiles);
-  Bytefile *result = (Bytefile *)malloc(sizeof(Bytefile) + sizes.strings +
-                                        sizes.code); // globals - on stack
-
-  // collect publics
-  std::unordered_map<std::string, size_t> publics;
-  std::vector<size_t> main_offsets;
-  {
-    size_t code_offset = 0;
-    for (size_t i = 0; i < bytefiles.size(); ++i) {
-      for (size_t j = 0; j < bytefiles[i]->public_symbols_number; ++j) {
-        const char *name = get_public_name_unsafe(bytefiles[i], j);
-        size_t offset =
-            get_public_name_offset_unsafe(bytefiles[i], j) + code_offset;
-
-        if (strcmp(name, "main") == 0) {
-          main_offsets.push_back(offset);
-        } else if (!publics.insert({name, offset}).second) {
-          failure("public name found more then once: %s", name);
-        }
-      }
-      code_offset += bytefiles[i]->code_size;
-    }
-  }
-
-  // init result
-  result->code_size = sizes.code;
-  result->stringtab_size = sizes.strings;
-  result->global_area_size = sizes.globals;
-  result->substs_area_size = 0;
-  result->imports_number = 0;
-  result->public_symbols_number = 0;
-
-  result->main_offset = 0; // TODO: save al main offsets in some way (?)
-  result->string_ptr = result->buffer;
-  result->imports_ptr = NULL;
-  result->public_ptr = NULL;
-  result->code_ptr = result->string_ptr + result->stringtab_size;
-  result->global_ptr = NULL;
-  result->substs_ptr = NULL;
-
-  // update & merge code segments
-  Offsets offsets{.strings = 0, .globals = 0, .code = 0};
-  for (size_t i = 0; i < bytefiles.size(); ++i) {
-    rewrite_code_with_offsets(bytefiles[i], offsets);
-    subst_in_code(bytefiles[i], publics);
-
-    // copy data to merged file
-    memcpy(result->string_ptr + offsets.strings, bytefiles[i]->string_ptr,
-           bytefiles[i]->stringtab_size);
-    memcpy(result->code_ptr + offsets.code, bytefiles[i]->code_ptr,
-           bytefiles[i]->code_size);
-
-    // update offsets
-    offsets.strings += bytefiles[i]->stringtab_size;
-    offsets.globals += bytefiles[i]->global_area_size;
-    offsets.code += bytefiles[i]->code_size;
-    free(bytefiles[i]);
-  }
-  return result;
 }
 
 const char *command_name(Cmd cmd, int8_t l) {
@@ -349,6 +220,8 @@ const char *command_name(Cmd cmd, int8_t l) {
     return "CALLC";
   case Cmd::CALL:
     return "CALL";
+  case Cmd::BUILTIN:
+    return "BUILTIN";
   case Cmd::TAG:
     return "TAG";
   case Cmd::ARRAY:
@@ -379,7 +252,7 @@ const char *command_name(Cmd cmd, int8_t l) {
     return "_UNDEF_";
   }
 
-  exit(1);
+  failure("command_name: unexpected command %u", static_cast<uint>(cmd));
 }
 // } // extern "C"
 
@@ -569,14 +442,14 @@ std::pair<Cmd, uint8_t> parse_command_impl(char **ip, const Bytefile &bf,
       break;
 
     default:
-      failure("invalid opcode");
+      failure("parser: basic, invalid opcode\n");
     }
     break;
 
   case CMD_LD: // LD %d
     cmd = Cmd::LD;
     if (l > sizeof(ldts) / sizeof(char *)) {
-      failure("wrong ld argument type");
+      failure("wrong ld argument type\n");
     }
     read_print_cmd_seq_opt<do_read_args, use_out, ArgT::INT>(cmd, l, ip, bf,
                                                              out);
@@ -584,7 +457,7 @@ std::pair<Cmd, uint8_t> parse_command_impl(char **ip, const Bytefile &bf,
   case CMD_LDA: // LDA %d
     cmd = Cmd::LDA;
     if (l > sizeof(ldts) / sizeof(char *)) {
-      failure("wrong lda argument type");
+      failure("wrong lda argument type\n");
     }
     read_print_cmd_seq_opt<do_read_args, use_out, ArgT::INT>(cmd, l, ip, bf,
                                                              out);
@@ -592,7 +465,7 @@ std::pair<Cmd, uint8_t> parse_command_impl(char **ip, const Bytefile &bf,
   case CMD_ST: // ST %d
     cmd = Cmd::ST;
     if (l > sizeof(ldts) / sizeof(char *)) {
-      failure("wrong st argument type");
+      failure("wrong st argument type\n");
     }
     read_print_cmd_seq_opt<do_read_args, use_out, ArgT::INT>(cmd, l, ip, bf,
                                                              out);
@@ -633,7 +506,7 @@ std::pair<Cmd, uint8_t> parse_command_impl(char **ip, const Bytefile &bf,
         for (size_t i = 0; i < args_count; i++) {
           uint8_t arg_type = ip_read_byte_safe(ip, &bf);
           if (arg_type > sizeof(ldts) / sizeof(char *)) {
-            failure("wrong closure argument type");
+            failure("wrong closure argument type\n");
           }
           print_space<use_out>(out);
           print_val<use_out>(out, ldts[arg_type]);
@@ -677,22 +550,21 @@ std::pair<Cmd, uint8_t> parse_command_impl(char **ip, const Bytefile &bf,
       read_print_cmd_seq_opt<do_read_args, use_out, ArgT::INT>(cmd, l, ip, bf,
                                                                out);
       break;
-      // NOTE: is replaced
-      // case CMD_CTRL_CALLF: // CALLF %s %d
-      //   cmd = Cmd::CALLF;
-      //   read_print_cmd_seq_opt<do_read_args, use_out, ArgT::STR, ArgT::INT>(
-      //       cmd, l, ip, bf, out);
-      //   break;
+    case CMD_CTRL_BUILTIN: // BUILTIN %d %d // call builtin
+      cmd = Cmd::BUILTIN;
+      read_print_cmd_seq_opt<do_read_args, use_out, ArgT::INT, ArgT::INT>(
+          cmd, l, ip, bf, out);
+      break;
 
     default:
-      failure("invalid opcode");
+      failure("parser: ctrl, invalid opcode\n");
     }
     break;
 
   case CMD_PATT: // PATT pats[l]
     // {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"}
     if (l >= sizeof(pats) / sizeof(char *)) {
-      failure("invalid opcode");
+      failure("parser: patt, invalid opcode\n");
     }
     cmd = Cmd::PATT;
     read_print_cmd_seq_opt<do_read_args, use_out>(cmd, l, ip, bf, out);
@@ -726,12 +598,12 @@ std::pair<Cmd, uint8_t> parse_command_impl(char **ip, const Bytefile &bf,
     //     break;
 
     //   default:
-    //     failure("invalid opcode");
+    //     failure("parser: bultin, invalid opcode\n");
     //   }
     // } break;
 
   default:
-    failure("invalid opcode");
+    failure("parser: invalid opcode\n");
   }
 #ifdef DEBUG_VERSION
   std::cout << command_name(cmd, l) << '\n';
@@ -757,6 +629,7 @@ bool is_command_name(char *ip, const Bytefile *bf, Cmd cmd) {
 }
 
 void print_file_info(const Bytefile &bf, std::ostream &out) {
+  out << "Code size               : " << bf.code_size << '\n';
   out << "String table size       : " << bf.stringtab_size << '\n';
   out << "Global area size        : " << bf.global_area_size << '\n';
   out << "Substitutions area size : " << bf.substs_area_size << '\n';
@@ -774,6 +647,16 @@ void print_file_info(const Bytefile &bf, std::ostream &out) {
         << get_public_offset_safe(&bf, i) << ": " << std::dec
         << get_public_name_safe(&bf, i) << '\n';
   }
+
+  out << "Substs                  :\n";
+  for (size_t i = 0; i < bf.substs_area_size; i++) {
+    uint32_t offset = *(uint32_t *)(bf.substs_ptr + i);
+    i += sizeof(uint32_t);
+    const char *name = bf.substs_ptr + i;
+    out << "   " << std::setfill('0') << std::setw(8) << std::hex << offset
+        << ": " << std::dec << name << '\n';
+    i += strlen(name);
+  }
 }
 
 void print_file_code(const Bytefile &bf, std::ostream &out) {
@@ -786,6 +669,7 @@ void print_file_code(const Bytefile &bf, std::ostream &out) {
     out << std::endl;
 
     if (cmd == Cmd::EXIT) {
+      std::cout << "> EXIT" << std::endl;
       break;
     }
   }
@@ -796,7 +680,7 @@ void print_file(const Bytefile &bf, std::ostream &out) {
 
   out << "Code:\n";
   print_file_code(bf, out);
-  out << "code end\n";
+  out << "Code end\n";
 }
 
 extern "C" {

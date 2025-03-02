@@ -19,8 +19,6 @@ void init_state(struct State* s, void** stack) {
   s->bf = NULL;
   s->current_line = 0;
   s->is_closure_call = false;
-  s->current_module_id = 0;
-  s->call_module_id = 0;
   s->ip = NULL; //s->bf->code_ptr;
   s->instr_ip = NULL; //s->bf->code_ptr;
   s->call_ip = NULL;
@@ -38,16 +36,13 @@ void init_state(struct State* s, void** stack) {
 #endif
 }
 
-void init_mod_state(uint mod_id, struct State* s) {
-  // init module data
-  s->bf = mod_get(mod_id);
-  s->current_module_id = mod_id;
+void prepare_state(Bytefile* bf, struct State* s) {
+  // init data
+  s->bf = bf;
 
   // clearup from previous executions
 
   s->is_closure_call = false;
-  s->current_module_id = 0;
-  s->call_module_id = 0;
   s->call_ip = NULL;
   s->current_line = 0;
 
@@ -62,7 +57,7 @@ void init_mod_state(uint mod_id, struct State* s) {
 #endif
 }
 
-void init_mod_state_globals(struct State *s) {
+void push_globals(struct State *s) {
   s_pushn_nil(s->bf->global_area_size);
   s->bf->global_ptr = (void*)__gc_stack_top;
 

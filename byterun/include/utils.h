@@ -7,11 +7,6 @@
 #include "../../runtime/runtime.h"
 #include "../../runtime/runtime_common.h"
 
-typedef struct {
-  uint offset;
-  char label[0];
-} Subst;
-
 /* The unpacked representation of bytecode file */
 typedef struct {
   uint main_offset;  /* offset of the function 'main'                        */
@@ -30,10 +25,10 @@ typedef struct {
   char buffer[0];
 } Bytefile;
 
-static inline void exec_failure(const char *cmd, const char *module_name,
-                                int line, aint offset, const char *msg) {
-  failure("*** RUNTIME ERROR: %s:%i(0x%.8x):%s error: %s\n", module_name, line,
-          offset, cmd, msg);
+static inline void exec_failure(const char *cmd, int line, aint offset,
+                                const char *msg) {
+  failure("*** RUNTIME ERROR: %i(0x%.8x):%s error: %s\n", line, offset, cmd,
+          msg);
 }
 
 // --- unsafe versions
@@ -165,4 +160,10 @@ static inline uint8_t ip_read_byte_safe(char **ip, const Bytefile *bf) {
 
 static inline const char *ip_read_string_safe(char **ip, const Bytefile *bf) {
   return get_string_safe(bf, ip_read_int_safe(ip, bf));
+}
+
+// ---
+
+static inline size_t calc_publics_size(size_t publics_number) {
+  return publics_number * 2 * sizeof(int);
 }

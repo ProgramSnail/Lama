@@ -1,4 +1,6 @@
+#include <iostream>
 extern "C" {
+#include "interpreter.h"
 #include "module_manager.h"
 #include "runtime_externs.h"
 #include "stack.h"
@@ -9,6 +11,7 @@ extern "C" {
 #include "parser.hpp"
 
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -42,146 +45,336 @@ void call_anyarg_func(void (*f)(), size_t n) {
   }
 }
 
-struct ModSymbolPos {
-  uint32_t mod_id;
-  size_t offset;
+// ---
+
+struct Offsets {
+  size_t strings;
+  size_t globals;
+  size_t code;
+  size_t publics_num;
 };
 
-struct Module {
-  std::string name;
-  Bytefile *bf;
-};
+void rewrite_code_with_offsets(Bytefile *bytefile, const Offsets &offsets) {
+  // TODO: globals offsets
 
-struct ModuleManager {
-  std::unordered_map<std::string, uint32_t> loaded_modules;
-  std::unordered_map<std::string, ModSymbolPos> public_symbols_mods;
-  std::vector<Module> modules;
-  std::vector<std::filesystem::path> search_paths;
-};
+  char *ip = bytefile->code_ptr;
+  while (ip - bytefile->code_ptr < bytefile->code_size) {
+    char *instr_ip = ip;
+    const auto [cmd, l] = parse_command(&ip, bytefile);
 
-static ModuleManager manager;
-
-uint32_t mod_add_impl(Bytefile *bf, bool do_verification,
-                      std::optional<const char *> name = std::nullopt) {
-#ifdef DEBUG_VERSION
-  std::cerr << "- add module (impl) '" << std::string{name ? *name : ""}
-            << "'\n";
-#endif
-  uint32_t id = manager.modules.size();
-  manager.modules.push_back({.name = name ? *name : "", .bf = bf});
-  for (size_t i = 0; i < bf->public_symbols_number; ++i) {
-    const char *public_name = get_public_name_safe(bf, i);
-#ifdef DEBUG_VERSION
-    std::cerr << "- load public " << public_name << "\n";
-#endif
-    size_t public_offset = get_public_offset_safe(bf, i);
-    if (strcmp(public_name, "main") == 0) {
-      bf->main_offset = public_offset;
-    } else if (!manager.public_symbols_mods
-                    .insert(
-                        {public_name, {.mod_id = id, .offset = public_offset}})
-                    .second) {
-      failure("public symbol '%s' loaded more then once\n",
-              get_public_name_safe(bf, i));
+    char *read_ip = instr_ip + 1;
+    char *write_ip = instr_ip + 1;
+    switch (cmd) {
+    case Cmd::STRING:
+      ip_write_int_unsafe(write_ip,
+                          ip_read_int_unsafe(&read_ip) + offsets.strings);
+      break;
+    case Cmd::JMP:
+    case Cmd::CJMPnz:
+    case Cmd::CJMPz:
+    case Cmd::CALL:
+      ip_write_int_unsafe(write_ip,
+                          ip_read_int_unsafe(&read_ip) + offsets.code);
+      break;
+    case Cmd::CLOSURE: {
+      ip_write_int_unsafe(write_ip,
+                          ip_read_int_unsafe(&read_ip) + offsets.code);
+      size_t args_count = ip_read_int_unsafe(&read_ip);
+      for (size_t i = 0; i < args_count; ++i) {
+        uint8_t arg_type = ip_read_byte_unsafe(&read_ip);
+        if (to_var_category(arg_type) == VAR_GLOBAL) {
+          write_ip = read_ip;
+          ip_write_int_unsafe(write_ip,
+                              ip_read_int_unsafe(&read_ip) + offsets.globals);
+        }
+      }
+      break;
+    }
+    case Cmd::LD:
+    case Cmd::ST:
+    case Cmd::STA:
+      if (to_var_category(l) == VAR_GLOBAL) {
+        ip_write_int_unsafe(write_ip,
+                            ip_read_int_unsafe(&read_ip) + offsets.globals);
+      }
+      break;
+    default:
+      break;
     }
   }
-  if (name) {
-    manager.loaded_modules.insert({*name, id});
-  }
-  if (do_verification) {
-    analyze(id);
-  }
-  return id;
 }
 
-uint32_t path_mod_load(const char *name, std::filesystem::path &&path,
-                       bool do_verification) {
+void subst_in_code(Bytefile *bytefile,
+                   const std::unordered_map<std::string, size_t> &publics) {
+  for (size_t i = 0; i < bytefile->substs_area_size; ++i) {
+    if (i + sizeof(uint32_t) >= bytefile->substs_area_size) {
+      failure("substitution %zu offset is out of area\n", i);
+    }
+
+    uint32_t offset = *(uint32_t *)(bytefile->substs_ptr + i);
+    i += sizeof(uint32_t);
+    const char *name = bytefile->substs_ptr + i;
+    i += strlen(name);
+
 #ifdef DEBUG_VERSION
-  std::cerr << "- module path load '" << name << "'\n";
+    printf("subst: offset %u, name %s\n", offset, name);
 #endif
-  Bytefile *module = read_file(path.c_str());
-  return mod_add_impl(module, do_verification, name);
+
+    if (i > bytefile->substs_area_size) {
+      failure("substitution %zu name is out of area\n", i);
+    }
+
+    BUILTIN builtin = id_by_builtin(name);
+
+    // NOTE: address is first argument of the call
+    if (builtin != BUILTIN_NONE) {
+      uint8_t cmd = ((CMD_CTRL << 4) | CMD_CTRL_BUILTIN);
+#ifdef DEBUG_VERSION
+      printf("set builtin %i, offset %i, cmd %u = (%u << 4) | %u, h = %u, l = "
+             "%u\n",
+             builtin, offset, cmd, CMD_CTRL, CMD_CTRL_BUILTIN,
+             (cmd & 0xF0) >> 4, cmd & 0x0F);
+#endif
+      *(uint8_t *)(bytefile->code_ptr + offset - 1) =
+          cmd; // set BUILTIN command
+      *(uint32_t *)(bytefile->code_ptr + offset) = builtin;
+      continue;
+    }
+
+    const auto it = publics.find(name);
+    if (it == publics.end()) {
+      failure("public name for substitution is not found: <%s>\n", name);
+    }
+
+    *(uint32_t *)(bytefile->code_ptr + offset) = it->second;
+    // TODO: check: +4 to match ?
+  }
 }
+
+Offsets calc_merge_sizes(const std::vector<Bytefile *> &bytefiles) {
+  Offsets sizes{.strings = 0, .globals = 0, .code = 0, .publics_num = 0};
+  for (size_t i = 0; i < bytefiles.size(); ++i) {
+    sizes.strings += bytefiles[i]->stringtab_size;
+    sizes.globals += bytefiles[i]->global_area_size;
+    sizes.code += bytefiles[i]->code_size;
+    sizes.publics_num += bytefiles[i]->public_symbols_number;
+  }
+  return sizes;
+}
+
+struct MergeResult {
+  Bytefile *bf;
+  std::vector<size_t> main_offsets;
+};
+
+MergeResult merge_files(std::vector<Bytefile *> &&bytefiles) {
+  Offsets sizes = calc_merge_sizes(bytefiles);
+  size_t public_symbols_size = calc_publics_size(sizes.publics_num);
+  Bytefile *result =
+      (Bytefile *)malloc(sizeof(Bytefile) + sizes.strings + sizes.code +
+                         public_symbols_size); // globals are on the stack
+
+  // collect publics
+  // TODO: add publics + updat name offsets too ?())
+  std::unordered_map<std::string, size_t> publics;
+  std::vector<size_t> main_offsets;
+  {
+    size_t code_offset = 0;
+    for (size_t i = 0; i < bytefiles.size(); ++i) {
+#ifdef DEBUG_VERSION
+      printf("bytefile <%zu>\n", i);
+#endif
+      for (size_t j = 0; j < bytefiles[i]->public_symbols_number; ++j) {
+#ifdef DEBUG_VERSION
+        printf("symbol <%zu>:<%zu>\n", i, j);
+#endif
+        const char *name = get_public_name_unsafe(bytefiles[i], j);
+        size_t offset = get_public_offset_unsafe(bytefiles[i], j) + code_offset;
+
+#ifdef DEBUG_VERSION
+        printf("symbol %s : %zu (code offset %zu)\n", name, offset,
+               code_offset);
+#endif
+        if (strcmp(name, "main") == 0) {
+          main_offsets.push_back(offset);
+        } else if (!publics.insert({name, offset}).second) {
+          failure("public name found more then once: %s", name);
+        }
+      }
+      code_offset += bytefiles[i]->code_size;
+    }
+  }
+
+  // init result
+  result->code_size = sizes.code;
+  result->stringtab_size = sizes.strings;
+  result->global_area_size = sizes.globals;
+  result->substs_area_size = 0;
+  result->imports_number = 0;
+  result->public_symbols_number = sizes.publics_num;
+
+  result->main_offset = 0; // TODO: save al main offsets in some way (?)
+  result->public_ptr = (int *)result->buffer;
+  result->string_ptr = (char *)result->public_ptr + public_symbols_size;
+  result->code_ptr = result->string_ptr + result->stringtab_size;
+  result->imports_ptr = NULL;
+  result->global_ptr = NULL;
+  result->substs_ptr = NULL;
+
+  // update & merge code segments
+  Offsets offsets{.strings = 0, .globals = 0, .code = 0, .publics_num = 0};
+  // REMOVE printf("merge bytefiles\n");
+  for (size_t i = 0; i < bytefiles.size(); ++i) {
+    // REMOVE printf("rewrite offsets %zu\n", i);
+    rewrite_code_with_offsets(bytefiles[i], offsets);
+    // REMOVE printf("subst in code %zu\n", i);
+    subst_in_code(bytefiles[i], publics);
+
+    size_t publics_offset = calc_publics_size(offsets.publics_num);
+
+    // copy data to merged file
+    memcpy(result->string_ptr + offsets.strings, bytefiles[i]->string_ptr,
+           bytefiles[i]->stringtab_size);
+    memcpy(result->code_ptr + offsets.code, bytefiles[i]->code_ptr,
+           bytefiles[i]->code_size);
+    memcpy((char *)result->public_ptr + publics_offset,
+           (char *)bytefiles[i]->public_ptr,
+           calc_publics_size(
+               bytefiles[i]->public_symbols_number)); // TODO: recalc publics:
+                                                      // offsets, strings
+
+    // update offsets
+    offsets.strings += bytefiles[i]->stringtab_size;
+    offsets.globals += bytefiles[i]->global_area_size;
+    offsets.code += bytefiles[i]->code_size;
+    offsets.publics_num += bytefiles[i]->public_symbols_number;
+    free(bytefiles[i]);
+  }
+
+#ifdef DEBUG_VERSION
+  std::cout << "- merged file:\n";
+  print_file(*result, std::cout);
+#endif
+  return {result, main_offsets};
+}
+
+// ---
+
+Bytefile *path_mod_load(const char *name, std::filesystem::path &&path) {
+#ifdef DEBUG_VERSION
+  std::cout << "- module path load '" << name << "'\n";
+#endif
+  return read_file(path.c_str());
+}
+
+static std::vector<std::filesystem::path> search_paths;
 
 extern "C" {
 
-void mod_cleanup() {
-  for (auto &mod : manager.modules) {
-    free(mod.bf);
-  }
-}
+void mod_add_search_path(const char *path) { search_paths.emplace_back(path); }
 
-void mod_add_search_path(const char *path) {
-  manager.search_paths.emplace_back(path);
-}
-
-const char *mod_get_name(uint32_t id) {
-  if (id > manager.modules.size()) {
-    failure("module id is out of range\n");
-  }
-  return manager.modules[id].name.c_str();
-}
-
-Bytefile *mod_get(uint32_t id) {
-  if (id > manager.modules.size()) {
-    failure("module id is out of range\n");
-  }
-  return manager.modules[id].bf;
-}
-
-int32_t find_mod_loaded(const char *name) {
-  auto it = manager.loaded_modules.find(name);
-
-  // module already loaded
-  if (it != manager.loaded_modules.end()) {
-    return it->second;
-  }
-
-  return -1;
-}
-
-int32_t mod_load(const char *name, bool do_verification) {
+Bytefile *mod_load(const char *name) {
   std::string full_name = std::string{name} + ".bc";
 
-  auto it = manager.loaded_modules.find(name);
-
-  // module already loaded
-  if (it != manager.loaded_modules.end()) {
-    return it->second;
-  }
-
   if (std::filesystem::exists(full_name)) {
-    return path_mod_load(name, full_name, do_verification);
+    return path_mod_load(name, full_name);
   }
-  for (const auto &dir_path : manager.search_paths) {
+  for (const auto &dir_path : search_paths) {
     auto path = dir_path / full_name;
     if (std::filesystem::exists(path)) {
-      return path_mod_load(name, std::move(path), do_verification);
+      return path_mod_load(name, std::move(path));
     }
   }
 
-  return -1;
+  return NULL;
 }
 
-uint32_t mod_add(Bytefile *module, bool do_verification) {
+} // extern "C"
+
+// uint32_t mod_add(Bytefile *module, bool do_verification) {
+// #ifdef DEBUG_VERSION
+//   std::cout << "- add module, no name\n";
+// #endif
+//   return mod_add_impl(module, do_verification);
+// }
+
+// ModSearchResult mod_search_pub_symbol(const char *name) {
+//   auto it = manager.public_symbols_mods.find(name);
+//   if (it == manager.public_symbols_mods.end()) {
+//     return {.symbol_offset = 0, .mod_id = 0, .mod_file = NULL};
+//   }
+
+//   return {
+//       .symbol_offset = it->second.offset,
+//       .mod_id = it->second.mod_id,
+//       .mod_file = mod_get(it->second.mod_id),
+//   };
+// }
+
+void mod_load_rec(Bytefile *mod,
+                  std::unordered_map<std::string, Bytefile *> &loaded,
+                  std::vector<Bytefile *> &loaded_ord) {
 #ifdef DEBUG_VERSION
-  std::cerr << "- add module, no name\n";
+  printf("- run mod rec, %i imports\n", mod->imports_number);
 #endif
-  return mod_add_impl(module, do_verification);
+  for (size_t i = 0; i < mod->imports_number; ++i) {
+    const char *import_str = get_import_safe(mod, i);
+    if (loaded.count(import_str) == 0 &&
+        strcmp(import_str, "Std") != 0) { // not loaded
+#ifdef DEBUG_VERSION
+      printf("- mod load <%s>\n", import_str);
+#endif
+      Bytefile *import_mod = mod_load(import_str); // TODO
+      if (import_mod == NULL) {
+        failure("module <%s> not found\n", import_str);
+      }
+      loaded.insert({import_str, import_mod});
+      mod_load_rec(import_mod, loaded, loaded_ord);
+      // loaded_ord.push_back(import_mod);
+    }
+  }
+  loaded_ord.push_back(mod);
 }
 
-ModSearchResult mod_search_pub_symbol(const char *name) {
-  auto it = manager.public_symbols_mods.find(name);
-  if (it == manager.public_symbols_mods.end()) {
-    return {.symbol_offset = 0, .mod_id = 0, .mod_file = NULL};
+MergeResult load_with_imports(Bytefile *root, bool do_verification) {
+  std::unordered_map<std::string, Bytefile *> loaded;
+  std::vector<Bytefile *> loaded_ord;
+  mod_load_rec(root, loaded, loaded_ord);
+
+  MergeResult result = merge_files(std::move(loaded_ord));
+
+  if (do_verification) {
+    // #ifdef DEBUG_VERSION
+    printf("main offsets count: %zu\n", result.main_offsets.size());
+    // #endif
+    analyze(result.bf /*, std::move(result.main_offsets)*/);
+  }
+  return result;
+}
+
+extern "C" {
+Bytefile *run_with_imports(Bytefile *root, int argc, char **argv,
+                           bool do_verification) {
+
+  MergeResult result = load_with_imports(root, do_verification);
+
+  Bytefile *bf = result.bf;
+
+  bf->main_offset = 0;
+  prepare_state(bf, &s); // NOTE: for push_globals
+  push_globals(&s);
+
+  for (size_t i = 0; i < result.main_offsets.size(); ++i) {
+    bf->main_offset = result.main_offsets[i];
+    set_argc_argv(argc, argv); // args for module main
+    run_main(bf, argc, argv);
   }
 
-  return {
-      .symbol_offset = it->second.offset,
-      .mod_id = it->second.mod_id,
-      .mod_file = mod_get(it->second.mod_id),
-  };
+  cleanup_state(&s);
+
+  return bf;
 }
+} // extern "C"
 
 struct StdFunc {
   void (*ptr)();
@@ -189,75 +382,128 @@ struct StdFunc {
   bool is_args = false; // one var for all args
   bool is_vararg = false;
 };
-bool run_stdlib_func(const char *name, size_t args_count) {
-  static const std::unordered_map<std::string, StdFunc> std_func = {
-      {"Luppercase", {.ptr = (void (*)()) & Luppercase, .args_count = 1}},
-      {"Llowercase", {.ptr = (void (*)()) & Llowercase, .args_count = 1}},
-      {"Lassert",
+
+BUILTIN id_by_builtin(const char *name) {
+  static const std::unordered_map<std::string, BUILTIN> std_func = {
+      {"Luppercase", BUILTIN_Luppercase},
+      {"Llowercase", BUILTIN_Llowercase},
+      {"Lassert", BUILTIN_Lassert},
+      {"Lstring", BUILTIN_Lstring},
+      {"Llength", BUILTIN_Llength},
+      {"LstringInt", BUILTIN_LstringInt},
+      {"Lread", BUILTIN_Lread},
+      {"Lwrite", BUILTIN_Lwrite},
+      {"LmakeArray", BUILTIN_LmakeArray},
+      {"LmakeString", BUILTIN_LmakeString},
+      {"Lstringcat", BUILTIN_Lstringcat},
+      {"LmatchSubString", BUILTIN_LmatchSubString},
+      {"Lsprintf", BUILTIN_Lsprintf},
+      {"Lsubstring", BUILTIN_Lsubstring},
+      {"Li__Infix_4343", BUILTIN_Li__Infix_4343}, // ++
+      {"Lclone", BUILTIN_Lclone},
+      {"Lhash", BUILTIN_Lhash},
+      {"LtagHash", BUILTIN_LtagHash},
+      {"Lcompare", BUILTIN_Lcompare},
+      {"LflatCompare", BUILTIN_LflatCompare},
+      {"Lfst", BUILTIN_Lfst},
+      {"Lsnd", BUILTIN_Lsnd},
+      {"Lhd", BUILTIN_Lhd},
+      {"Ltl", BUILTIN_Ltl},
+      {"LreadLine", BUILTIN_LreadLine},
+      {"Lprintf", BUILTIN_Lprintf},
+      {"Lfopen", BUILTIN_Lfopen},
+      {"Lfclose", BUILTIN_Lfclose},
+      {"Lfread", BUILTIN_Lfread},
+      {"Lfwrite", BUILTIN_Lfwrite},
+      {"Lfexists", BUILTIN_Lfexists},
+      {"Lfprintf", BUILTIN_Lfprintf},
+      {"Lregexp", BUILTIN_Lregexp},
+      {"LregexpMatch", BUILTIN_LregexpMatch},
+      {"Lfailure", BUILTIN_Lfailure},
+      {"Lsystem", BUILTIN_Lsystem},
+      {"LgetEnv", BUILTIN_LgetEnv},
+      {"Lrandom", BUILTIN_Lrandom},
+      {"Ltime", BUILTIN_Ltime},
+      {".array", BUILTIN_Barray},
+  };
+
+  auto const it = std_func.find(name);
+
+  return it == std_func.end() ? BUILTIN_NONE : it->second;
+}
+
+void run_stdlib_func(BUILTIN id, size_t args_count) {
+  static const std::map<BUILTIN, StdFunc> std_func = {
+      {BUILTIN_Luppercase, {.ptr = (void (*)()) & Luppercase, .args_count = 1}},
+      {BUILTIN_Llowercase, {.ptr = (void (*)()) & Llowercase, .args_count = 1}},
+      {BUILTIN_Lassert,
        {.ptr = (void (*)()) & Lassert, .args_count = 2, .is_vararg = true}},
-      {"Lstring",
+      {BUILTIN_Lstring,
        {.ptr = (void (*)()) & Lstring, .args_count = 1, .is_args = true}},
-      {"Llength", {.ptr = (void (*)()) & Llength, .args_count = 1}},
-      {"LstringInt", {.ptr = (void (*)()) & LstringInt, .args_count = 1}},
-      {"Lread", {.ptr = (void (*)()) & Lread, .args_count = 0}},
-      {"Lwrite", {.ptr = (void (*)()) & Lwrite, .args_count = 1}},
-      {"LmakeArray", {.ptr = (void (*)()) & LmakeArray, .args_count = 1}},
-      {"LmakeString", {.ptr = (void (*)()) & LmakeString, .args_count = 1}},
-      {"Lstringcat",
+      {BUILTIN_Llength, {.ptr = (void (*)()) & Llength, .args_count = 1}},
+      {BUILTIN_LstringInt, {.ptr = (void (*)()) & LstringInt, .args_count = 1}},
+      {BUILTIN_Lread, {.ptr = (void (*)()) & Lread, .args_count = 0}},
+      {BUILTIN_Lwrite, {.ptr = (void (*)()) & Lwrite, .args_count = 1}},
+      {BUILTIN_LmakeArray, {.ptr = (void (*)()) & LmakeArray, .args_count = 1}},
+      {BUILTIN_LmakeString,
+       {.ptr = (void (*)()) & LmakeString, .args_count = 1}},
+      {BUILTIN_Lstringcat,
        {.ptr = (void (*)()) & Lstringcat, .args_count = 1, .is_args = true}},
-      {"LmatchSubString",
+      {BUILTIN_LmatchSubString,
        {.ptr = (void (*)()) & LmatchSubString, .args_count = 3}},
-      {"Lsprintf",
+      {BUILTIN_Lsprintf,
        {.ptr = (void (*)()) & Lsprintf, .args_count = 1, .is_vararg = true}},
-      {"Lsubstring",
+      {BUILTIN_Lsubstring,
        {.ptr = (void (*)()) & Lsubstring, .args_count = 3, .is_args = true}},
-      {"Li__Infix_4343",
+      {BUILTIN_Li__Infix_4343,
        {.ptr = (void (*)()) & Li__Infix_4343,
         .args_count = 2,
         .is_args = true}}, // ++
-      {"Lclone",
+      {BUILTIN_Lclone,
        {.ptr = (void (*)()) & Lclone, .args_count = 1, .is_args = true}},
-      {"Lhash", {.ptr = (void (*)()) & Lhash, .args_count = 1}},
-      {"LtagHash", {.ptr = (void (*)()) & LtagHash, .args_count = 1}},
-      {"Lcompare", {.ptr = (void (*)()) & Lcompare, .args_count = 2}},
-      {"LflatCompare", {.ptr = (void (*)()) & LflatCompare, .args_count = 2}},
-      {"Lfst", {.ptr = (void (*)()) & Lfst, .args_count = 1}},
-      {"Lsnd", {.ptr = (void (*)()) & Lsnd, .args_count = 1}},
-      {"Lhd", {.ptr = (void (*)()) & Lhd, .args_count = 1}},
-      {"Ltl", {.ptr = (void (*)()) & Ltl, .args_count = 1}},
-      {"LreadLine", {.ptr = (void (*)()) & LreadLine, .args_count = 0}},
-      {"Lprintf",
+      {BUILTIN_Lhash, {.ptr = (void (*)()) & Lhash, .args_count = 1}},
+      {BUILTIN_LtagHash, {.ptr = (void (*)()) & LtagHash, .args_count = 1}},
+      {BUILTIN_Lcompare, {.ptr = (void (*)()) & Lcompare, .args_count = 2}},
+      {BUILTIN_LflatCompare,
+       {.ptr = (void (*)()) & LflatCompare, .args_count = 2}},
+      {BUILTIN_Lfst, {.ptr = (void (*)()) & Lfst, .args_count = 1}},
+      {BUILTIN_Lsnd, {.ptr = (void (*)()) & Lsnd, .args_count = 1}},
+      {BUILTIN_Lhd, {.ptr = (void (*)()) & Lhd, .args_count = 1}},
+      {BUILTIN_Ltl, {.ptr = (void (*)()) & Ltl, .args_count = 1}},
+      {BUILTIN_LreadLine, {.ptr = (void (*)()) & LreadLine, .args_count = 0}},
+      {BUILTIN_Lprintf,
        {.ptr = (void (*)()) & Lprintf, .args_count = 1, .is_vararg = true}},
-      {"Lfopen", {.ptr = (void (*)()) & Lfopen, .args_count = 2}},
-      {"Lfclose", {.ptr = (void (*)()) & Lfclose, .args_count = 1}},
-      {"Lfread", {.ptr = (void (*)()) & Lfread, .args_count = 1}},
-      {"Lfwrite", {.ptr = (void (*)()) & Lfwrite, .args_count = 2}},
-      {"Lfexists", {.ptr = (void (*)()) & Lfexists, .args_count = 1}},
-      {"Lfprintf",
+      {BUILTIN_Lfopen, {.ptr = (void (*)()) & Lfopen, .args_count = 2}},
+      {BUILTIN_Lfclose, {.ptr = (void (*)()) & Lfclose, .args_count = 1}},
+      {BUILTIN_Lfread, {.ptr = (void (*)()) & Lfread, .args_count = 1}},
+      {BUILTIN_Lfwrite, {.ptr = (void (*)()) & Lfwrite, .args_count = 2}},
+      {BUILTIN_Lfexists, {.ptr = (void (*)()) & Lfexists, .args_count = 1}},
+      {BUILTIN_Lfprintf,
        {.ptr = (void (*)()) & Lfprintf, .args_count = 2, .is_vararg = true}},
-      {"Lregexp", {.ptr = (void (*)()) & Lregexp, .args_count = 1}},
-      {"LregexpMatch", {.ptr = (void (*)()) & LregexpMatch, .args_count = 3}},
-      {"Lfailure",
+      {BUILTIN_Lregexp, {.ptr = (void (*)()) & Lregexp, .args_count = 1}},
+      {BUILTIN_LregexpMatch,
+       {.ptr = (void (*)()) & LregexpMatch, .args_count = 3}},
+      {BUILTIN_Lfailure,
        {.ptr = (void (*)()) & Lfailure, .args_count = 1, .is_vararg = true}},
-      {"Lsystem", {.ptr = (void (*)()) & Lsystem, .args_count = 1}},
-      {"LgetEnv", {.ptr = (void (*)()) & LgetEnv, .args_count = 1}},
-      {"Lrandom", {.ptr = (void (*)()) & Lrandom, .args_count = 1}},
-      {"Ltime", {.ptr = (void (*)()) & Ltime, .args_count = 0}},
+      {BUILTIN_Lsystem, {.ptr = (void (*)()) & Lsystem, .args_count = 1}},
+      {BUILTIN_LgetEnv, {.ptr = (void (*)()) & LgetEnv, .args_count = 1}},
+      {BUILTIN_Lrandom, {.ptr = (void (*)()) & Lrandom, .args_count = 1}},
+      {BUILTIN_Ltime, {.ptr = (void (*)()) & Ltime, .args_count = 0}},
   };
   // some functions do use on args pointer
 
-  const auto it = std_func.find(name);
+  const auto it = std_func.find(id);
 
   if (it == std_func.end()) {
-    return false;
+    failure("RUNTIME ERROR: stdlib function <%u> not found\n", id);
   }
 
   // TODO: move to bytecode verifier
   if ((!it->second.is_vararg && it->second.args_count != args_count) ||
       it->second.args_count > args_count) {
-    failure("RUNTIME ERROR: stdlib function <%s> argument count <%zu> is not "
+    failure("RUNTIME ERROR: stdlib function <%u> argument count <%zu> is not "
             "expected (expected is <%s%zu>)\n",
-            name, it->second.args_count, it->second.is_vararg ? ">=" : "=",
+            id, it->second.args_count, it->second.is_vararg ? ">=" : "=",
             args_count);
   }
 
@@ -268,7 +514,4 @@ bool run_stdlib_func(const char *name, size_t args_count) {
   } else {
     call_anyarg_func<20>(it->second.ptr, args_count);
   }
-  return true;
 }
-
-} // extern "C"

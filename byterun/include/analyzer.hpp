@@ -4,4 +4,6 @@ extern "C" {
 #include "utils.h"
 }
 
-void analyze(uint32_t mod_id);
+#include <vector>
+
+void analyze(Bytefile *bf, std::vector<size_t> &&add_publics = {});
