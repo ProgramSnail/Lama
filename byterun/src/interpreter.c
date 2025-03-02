@@ -147,9 +147,9 @@ void run_main(Bytefile* bf, int argc, char **argv) {
     s.instr_ip = s.ip;
     uint8_t x = ip_read_byte(&s.ip), h = (x & 0xF0) >> 4, l = x & 0x0F;
 
-// #ifdef DEBUG_VERSION
+#ifdef DEBUG_VERSION
     printf("0x%.8x: %s\n", s.ip - s.bf->code_ptr - 1, read_cmd(s.ip - 1, s.bf));
-// #endif
+#endif
 
     switch (h) {
     case CMD_EXIT:
@@ -371,7 +371,7 @@ void run_main(Bytefile* bf, int argc, char **argv) {
 // #else
 //         uint locals_sz = ip_read_int(&s.ip);
 // #endif
-#ifdef WITH_CHECK
+#ifndef WITH_CHECK
         if (s.fp != NULL && s.call_ip == NULL) {
           s_failure(&s, "begin should only be called after call");
         }
@@ -402,7 +402,7 @@ void run_main(Bytefile* bf, int argc, char **argv) {
 #endif
         s_enter_f(s.call_ip /*ip from call*/,
                   s.is_closure_call, args_sz, locals_sz);
-#ifdef WITH_CHECK
+#ifndef WITH_CHECK
         if ((void **)__gc_stack_top + (aint)max_additional_stack_sz - 1 <= s.stack) {
           s_failure(&s, "stack overflow");
         }
@@ -498,20 +498,20 @@ void run_main(Bytefile* bf, int argc, char **argv) {
         size_t builtin_id = ip_read_int(&s.ip);
         size_t args_count = ip_read_int(&s.ip); // args count
 
+#ifdef DEBUG_VERSION
         printf("builtin id: %zu\n", builtin_id);
-// #ifndef WITH_CHECK
+#endif
+#ifndef WITH_CHECK
         if (builtin_id >= BUILTIN_NONE) {
           s_failure(&s, "invalid builtin");
         }
-// #endif
+#endif
 
         if (builtin_id == BUILTIN_Barray) {
           call_Barray(args_count, &s.ip, buffer);
         } else {
           run_stdlib_func(builtin_id, args_count);
         }
-        printf("builtin end\n");
-        fflush(stdout);
         break;
       }
 

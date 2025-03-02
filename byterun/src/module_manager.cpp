@@ -60,7 +60,14 @@ void rewrite_code_with_offsets(Bytefile *bytefile, const Offsets &offsets) {
   char *ip = bytefile->code_ptr;
   while (ip - bytefile->code_ptr < bytefile->code_size) {
     char *instr_ip = ip;
+
+#ifdef DEBUG_VERSION
+    std::cout << ip - bytefile->code_ptr << ": ";
+    const auto [cmd, l] = parse_command(&ip, bytefile, std::cout);
+    std::cout << '\n';
+#else
     const auto [cmd, l] = parse_command(&ip, bytefile);
+#endif
 
     char *read_ip = instr_ip + 1;
     char *write_ip = instr_ip + 1;
@@ -91,8 +98,8 @@ void rewrite_code_with_offsets(Bytefile *bytefile, const Offsets &offsets) {
       break;
     }
     case Cmd::LD:
+    case Cmd::LDA:
     case Cmd::ST:
-    case Cmd::STA:
       if (to_var_category(l) == VAR_GLOBAL) {
         ip_write_int_unsafe(write_ip,
                             ip_read_int_unsafe(&read_ip) + offsets.globals);
@@ -248,6 +255,7 @@ MergeResult merge_files(std::vector<Bytefile *> &&bytefiles) {
     offsets.globals += bytefiles[i]->global_area_size;
     offsets.code += bytefiles[i]->code_size;
     offsets.publics_num += bytefiles[i]->public_symbols_number;
+
     free(bytefiles[i]);
   }
 
@@ -330,7 +338,6 @@ void mod_load_rec(Bytefile *mod,
       }
       loaded.insert({import_str, import_mod});
       mod_load_rec(import_mod, loaded, loaded_ord);
-      // loaded_ord.push_back(import_mod);
     }
   }
   loaded_ord.push_back(mod);
@@ -344,9 +351,9 @@ MergeResult load_with_imports(Bytefile *root, bool do_verification) {
   MergeResult result = merge_files(std::move(loaded_ord));
 
   if (do_verification) {
-    // #ifdef DEBUG_VERSION
+#ifdef DEBUG_VERSION
     printf("main offsets count: %zu\n", result.main_offsets.size());
-    // #endif
+#endif
     analyze(result.bf /*, std::move(result.main_offsets)*/);
   }
   return result;

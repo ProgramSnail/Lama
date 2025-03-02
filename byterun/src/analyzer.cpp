@@ -320,7 +320,6 @@ void analyze(Bytefile *bf, std::vector<size_t> &&add_publics) {
     case Cmd::LINE:
       break;
     case Cmd::BUILTIN: {
-      std::cout << "builtin\n";
       // TODO: find link to real function and replace call (need to save all
       // modules in one space) <- optimization
 

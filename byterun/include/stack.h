@@ -40,11 +40,14 @@ static inline void **s_nth(size_t n) {
 static inline void **s_peek() {
 #ifndef WITH_CHECK
   if ((void **)__gc_stack_top == s_top()) {
-    s_failure(&s, "empty stack");
+    s_failure(&s, "peek: empty stack");
   }
   if (s.fp != NULL && (void **)__gc_stack_top == f_locals(s.fp)) {
-    s_failure(&s, "empty function stack");
+    s_failure(&s, "peek: empty function stack");
   }
+#endif
+#ifdef DEBUG_VERSION
+  printf("--> peek\n");
 #endif
 
   return (void **)__gc_stack_top;
@@ -72,8 +75,11 @@ static inline void s_push_nil() { s_push(NULL); }
 static inline void s_pushn_nil(size_t n) {
 #ifndef WITH_CHECK
   if ((void **)__gc_stack_top + (aint)n - 1 <= s.stack) {
-    s_failure(&s, "stack overflow");
+    s_failure(&s, "pushn: stack overflow");
   }
+#endif
+#ifdef DEBUG_VERSION
+  printf("--> push %zu\n", n);
 #endif
   for (size_t i = 0; i < n; ++i) {
     __gc_stack_top -= sizeof(void *);
@@ -84,10 +90,10 @@ static inline void s_pushn_nil(size_t n) {
 static inline void *s_pop() {
 #ifndef WITH_CHECK
   if ((void **)__gc_stack_top == s_top()) {
-    s_failure(&s, "empty stack");
+    s_failure(&s, "pop: empty stack");
   }
   if (s.fp != NULL && (void **)__gc_stack_top == f_locals(s.fp)) {
-    s_failure(&s, "empty function stack");
+    s_failure(&s, "pop: empty function stack");
   }
 #endif
 #ifdef DEBUG_VERSION
@@ -101,9 +107,17 @@ static inline void *s_pop() {
 static inline aint s_pop_i() { return (aint)s_pop(); }
 
 static inline void s_popn(size_t n) {
+#ifndef WITH_CHECK
   if ((void **)__gc_stack_top + (aint)n - 1 >= s_top()) {
-    s_failure(&s, "empty stack");
+    s_failure(&s, "popn: empty stack");
   }
+  if (s.fp != NULL && (void **)__gc_stack_top + (aint)n - 1 >= f_locals(s.fp)) {
+    s_failure(&s, "popn: empty function stack");
+  }
+#endif
+#ifdef DEBUG_VERSION
+  printf("--> popn %zu\n", n);
+#endif
   __gc_stack_top += n * sizeof(void *);
 }
 
@@ -251,7 +265,7 @@ static inline void **var_by_category(enum VarCategory category, size_t id) {
                                                   // s.bf->global_area_size);
     }
 #endif
-    var = s.bf->global_ptr + STACK_SIZE - 1 - id;
+    var = s.bf->global_ptr - id;
     break;
   case VAR_LOCAL:
 #ifndef WITH_CHECK
