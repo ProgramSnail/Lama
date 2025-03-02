@@ -382,7 +382,8 @@ module ByteCode = struct
     List.iter
       (fun (c, l) ->
         Buffer.add_int32_ne subst_table @@ Int32.of_int c;
-        Buffer.add_string subst_table l)
+        Buffer.add_string subst_table l;
+        Buffer.add_char subst_table (Char.chr 0))
       !substs;
     Buffer.add_int32_ne file (Int32.of_int @@ Bytes.length str_table);
     Buffer.add_int32_ne file (Int32.of_int @@ !glob_count);
