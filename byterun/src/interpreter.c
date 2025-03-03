@@ -81,41 +81,14 @@ void set_argc_argv(int argc, char **argv) {
 }
 
 void call_Barray(size_t elem_count, char** ip, void** buffer) {
-    // size_t elem_count = ip_read_int(ip);
-
-    bool use_new_buffer = (elem_count > BUFFER_SIZE);
-
-    void **opr_buffer = (void**)(use_new_buffer
-                            ? alloc(elem_count * sizeof(void *))
-                            : buffer);
-
-    if (use_new_buffer) {
-      for (size_t i = 0; i < elem_count; ++i) {
-        opr_buffer[i] = 0;
-        push_extra_root(&opr_buffer[i]);
-      }
-    }
-
-    for (size_t i = 0; i < elem_count; ++i) {
-      opr_buffer[elem_count - i - 1] = s_pop();
-    }
-
-    // s_rotate_n(elem_count);
+    s_rotate_n(elem_count);
 
     // NOTE: not sure if elems should be added
-    void *array =
-        Barray((aint *)opr_buffer,
-               BOX(elem_count)); 
+    void *array = NULL;
 
-    // void *array = Barray((aint *)s_peek(), BOX(elem_count));
+    array = Barray((aint*)s_peek(), BOX(elem_count));
+    s_popn(elem_count);
     s_push(array);
-
-    if (use_new_buffer) {
-      for (size_t i = 0; i < elem_count; ++i) {
-        pop_extra_root(&opr_buffer[i]);
-      }
-      free(opr_buffer);
-    }
 }
 
 void run_main(Bytefile* bf, int argc, char **argv) {
