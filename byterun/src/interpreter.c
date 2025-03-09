@@ -80,7 +80,20 @@ void set_argc_argv(int argc, char **argv) {
 #endif
 }
 
-void call_Barray(size_t elem_count, char** ip, void** buffer) {
+static inline void call_Bsexp(const char* name, size_t args_count) {
+#ifdef DEBUG_VERSION
+    printf("tag hash is %i, n is %i\n", UNBOX(LtagHash((char *)name)),
+           args_count);
+#endif
+    s_push((void *)LtagHash((char *)name));
+    s_rotate_n(args_count + 1);
+
+    void *sexp = Bsexp((aint *)s_peek(), BOX(args_count + 1));
+    s_popn(args_count + 1);
+    s_push(sexp);
+}
+
+static inline void call_Barray(size_t elem_count) {
     s_rotate_n(elem_count);
 
     // NOTE: not sure if elems should be added
@@ -174,43 +187,7 @@ void run_main(Bytefile* bf, int argc, char **argv) {
         // params read from stack
         const char *name = ip_read_string(&s.ip);
         size_t args_count = ip_read_int(&s.ip);
-#ifdef DEBUG_VERSION
-        printf("tag hash is %i, n is %i\n", UNBOX(LtagHash((char *)name)),
-               args_count);
-#endif
-
-        bool use_new_buffer = (args_count >= BUFFER_SIZE);
-
-        void **opr_buffer = (void**)(use_new_buffer
-                                ? alloc((args_count + 1) * sizeof(void *))
-                                : buffer);
-
-        if (use_new_buffer) {
-          for (size_t i = 0; i <= args_count; ++i) {
-            opr_buffer[i] = 0;
-            push_extra_root(&opr_buffer[i]);
-          }
-        }
-
-        // s_put_nth(args_count, (void *)LtagHash((char *)name));
-
-        for (size_t i = 1; i <= args_count; ++i) {
-          opr_buffer[args_count - i] = s_pop();
-        }
-        opr_buffer[args_count] = (void *)LtagHash((char *)name);
-
-        void *sexp = Bsexp((aint *)opr_buffer, BOX(args_count + 1));
-        // void *sexp = Bsexp((aint *)s_peek(), BOX(args_count + 1));
-        // s_popn(args_count + 1);
-
-        s_push(sexp);
-
-        if (use_new_buffer) {
-          for (size_t i = 0; i <= args_count; ++i) {
-            pop_extra_root(&opr_buffer[i]);
-          }
-          free(opr_buffer);
-        }
+        call_Bsexp(name, args_count);
         break;
       }
 
@@ -353,7 +330,7 @@ void run_main(Bytefile* bf, int argc, char **argv) {
                   s.is_closure_call, args_sz, locals_sz);
 #ifndef WITH_CHECK
         if ((void **)__gc_stack_top + (aint)max_additional_stack_sz - 1 <= s.stack) {
-          s_failure(&s, "stack owerflow");
+          s_failure(&s, "stack overflow");
         }
 #endif
         break;
@@ -481,7 +458,7 @@ void run_main(Bytefile* bf, int argc, char **argv) {
 #endif
 
         if (builtin_id == BUILTIN_Barray) {
-          call_Barray(args_count, &s.ip, buffer);
+          call_Barray(args_count);
         } else {
           run_stdlib_func(builtin_id, args_count);
         }

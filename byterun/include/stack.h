@@ -145,7 +145,6 @@ static inline void s_put_nth(size_t n, void *val) {
 }
 
 static inline void s_rotate_n(size_t n) {
-  s_push_nil();
 #ifndef WITH_CHECK
   if ((void **)__gc_stack_top + (aint)n - 1 >= s_top()) {
     s_failure(&s, "not enough elements in stack");
@@ -156,9 +155,9 @@ static inline void s_rotate_n(size_t n) {
 #endif
 
   void *buf = NULL;
-  for (size_t i = 0; 2 * i < n; ++i) {
-    buf = ((void **)__gc_stack_top)[n - i];
-    ((void **)__gc_stack_top)[n - i] = ((void **)__gc_stack_top)[i];
+  for (size_t i = 0; 2 * i + 1 < n; ++i) {
+    buf = ((void **)__gc_stack_top)[n - i - 1];
+    ((void **)__gc_stack_top)[n - i - 1] = ((void **)__gc_stack_top)[i];
     ((void **)__gc_stack_top)[i] = buf;
   }
 }
