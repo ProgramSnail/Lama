@@ -10,6 +10,8 @@ on:
       - "more-dune"
 
 permissions: read-all
+env:
+  OPAMCONFIRMLEVEL: unsafe-yes
 
 jobs:
   build:
@@ -19,6 +21,8 @@ jobs:
         os:
           - ubuntu-latest
           - macos-latest
+          # intel macos
+          - macos-13
         ocaml-compiler:
           - 4.14.2
 
@@ -33,9 +37,51 @@ jobs:
         with:
           ocaml-compiler: ${{ matrix.ocaml-compiler }}
 
+      - run: gcc --version
+
+      - name: Prepare to install cross-compiler (Ubuntu specific)
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt update -y
+
       - run: opam pin add Lama.dev . --no-action
       - run: opam depext Lama.dev --yes --with-test
       - run: opam install . --deps-only --with-test
       - run: eval $(opam env)
-      - run: opam exec -- make install
-      - run: opam exec -- make regression
+
+      - run: rm -fr runtime32
+        if: ${{ matrix.os == 'macos-latest' || matrix.os == 'macos-13' }}
+      - run: opam exec -- dune b src runtime runtime32 stdlib tutorial
+        if: ${{ matrix.os != 'macos-latest' && matrix.os != 'macos-13'}}
+      - run: opam exec -- dune b src runtime stdlib tutorial
+        if: ${{ matrix.os == 'macos-latest' || matrix.os == 'macos-13' }}
+      - run: opam exec -- dune b @install --profile=release
+      - run: opam exec -- dune    install --profile=release
+      - run: opam exec -- dune test stdlib/regression
+      - run: opam exec -- dune test regression_long
+      - run: opam exec -- dune test regression
+      - run: opam exec -- make regression-all
+
+      #  fails on mac
+      # - run: opam exec -- dune b
+      # - run: opam exec -- dune    install --profile=release
+      # - run: opam exec -- dune test stdlib/regression
+      # - run: opam exec -- dune test regression
+      # - run: opam exec -- dune test regression_long
+
+      # works
+      # - run: rm -fr runtime32
+      #   if: ${{ matrix.os == 'macos-latest' }}
+      # - run: opam exec -- dune b src runtime stdlib tutorial
+      #   if: ${{ matrix.os == 'macos-latest' }}
+      # - run: opam exec -- make install
+      #   if: ${{ matrix.os != 'macos-latest' }}
+      # - run: opam exec -- make regression-all
+
+      # - run: opam exec -- dune test stdlib/regression -j1
+      # - run: opam exec -- dune b
+      # - run: opam exec -- dune b @install
+      # - run: opam exec -- dune install
+      # - run: opam exec -- make regression
+      # - run: opam exec -- dune test regression

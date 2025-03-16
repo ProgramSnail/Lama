@@ -34,3 +34,4 @@
   (promote (until-clean)))
  (action
   (run gcc -Wall -Wextra -O3 -Iinclude/ -DWITH_CHECK -c %{src} -o %{target})))
+ 

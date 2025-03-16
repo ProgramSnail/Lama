@@ -1,8 +1,9 @@
 (rule
- (targets Sort.x64.exe)
+ (targets Sort.exe)
  (deps
   (:lama Sort.lama)
-  ../runtime/runtime.a)
+  ../runtime/runtime.a
+  ../stdlib/x64/Fun.i)
  (mode
   (promote (until-clean)))
  (action
@@ -11,11 +12,11 @@
    "../runtime"
    (run
     %{project_root}/src/Driver.exe
-    -march=x86_64
+    -64
     %{lama}
     -I
     ../stdlib/x64
-    -I
+    -runtime
     ../runtime
     -o
     %{targets}))))
