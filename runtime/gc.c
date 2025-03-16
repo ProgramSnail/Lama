@@ -56,6 +56,8 @@ void handler (int sig) {
 }
 
 void *alloc (size_t size) {
+  // return malloc(size);
+  // FIXME, disable gc
 #ifdef DEBUG_VERSION
   ++cur_id;
 #endif
@@ -247,6 +249,7 @@ static void gc_root_scan_stack () {
 }
 
 void mark_phase (void) {
+  // FIXME, disable gc
 #if defined(DEBUG_VERSION) && defined(DEBUG_PRINT)
   fprintf(stderr, "marking has started\n");
   fprintf(stderr,
@@ -620,7 +623,8 @@ extern void __shutdown (void) {
 void clear_extra_roots (void) { extra_roots.current_free = 0; }
 
 void push_extra_root (void **p) {
-  if (extra_roots.current_free >= MAX_EXTRA_ROOTS_NUMBER) {
+  // FIXME, disable gc
+  if (extra_roots.current_free > MAX_EXTRA_ROOTS_NUMBER) {
     perror("ERROR: push_extra_roots: extra_roots_pool overflow\n");
     exit(1);
   }
@@ -630,6 +634,7 @@ void push_extra_root (void **p) {
 }
 
 void pop_extra_root (void **p) {
+  // FIXME, disable gc
   if (extra_roots.current_free == 0) {
     perror("ERROR: pop_extra_root: extra_roots are empty\n");
     exit(1);
