@@ -486,10 +486,10 @@ void run_main(Bytefile* bf, int argc, char **argv) {
         s_push_i(Bsexp_tag_patt(s_pop()));
         break;
       case CMD_PATT_REF_TAG: // #ref
-        s_push_i(Bunboxed_patt(s_pop()));
+        s_push_i(Bboxed_patt(s_pop()));
         break;
       case CMD_PATT_VAL_TAG: // #val
-        s_push_i(Bboxed_patt(s_pop()));
+        s_push_i(Bunboxed_patt(s_pop()));
         break;
       case CMD_PATT_FUN_TAG: // #fun
         s_push_i(Bclosure_tag_patt(s_pop()));

@@ -235,6 +235,10 @@ static inline void s_exit_f() {
 #endif
   s_popn(f_args_sz(&frame));
 
+  if (frame.closure) {
+    s_pop();
+  }
+
   // save returned value, not in main
   if (frame.prev_fp != 0) {
     s_push(frame.ret);

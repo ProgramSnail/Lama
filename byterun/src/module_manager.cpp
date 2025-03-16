@@ -473,6 +473,7 @@ void run_stdlib_func(BUILTIN id, size_t args_count) {
     s_push(ret);
     break;
   case BUILTIN_Lread:
+    printf(" ");
     ret = (void *)Lread();
     s_push(ret);
     break;
