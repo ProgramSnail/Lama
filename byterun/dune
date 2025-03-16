@@ -11,7 +11,7 @@
  (mode
   (promote (until-clean)))
  (action
-  (run g++ -Wall -Wextra -std=c++20 -DWITH_CHECK -Iinclude/ %{main} %{parser} %{analyzer} %{module_manager} %{runtime} %{obj} -o %{target})))
+  (run g++ -Wall -Wextra -O3 -std=c++20 -DWITH_CHECK -Iinclude/ %{main} %{parser} %{analyzer} %{module_manager} %{runtime} %{obj} -o %{target})))
 
 (rule
  (target types.o)
@@ -22,7 +22,7 @@
  (mode
   (promote (until-clean)))
  (action
-  (run gcc -Wall -Wextra -Iinclude/ -DWITH_CHECK -c %{src} -o %{target})))
+  (run gcc -Wall -Wextra -O3 -Iinclude/ -DWITH_CHECK -c %{src} -o %{target})))
 
 (rule
  (target interpreter.o)
@@ -33,4 +33,4 @@
  (mode
   (promote (until-clean)))
  (action
-  (run gcc -Wall -Wextra -Iinclude/ -DWITH_CHECK -c %{src} -o %{target})))
+  (run gcc -Wall -Wextra -O3 -Iinclude/ -DWITH_CHECK -c %{src} -o %{target})))

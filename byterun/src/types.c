@@ -12,7 +12,7 @@ extern size_t __gc_stack_top, __gc_stack_bottom;
 // --- State ---
 
 void init_state(struct State* s, void** stack) {
-  // __init(); // FIXME, disable gc
+  __init(); // FIXME, disable gc
 
   s->stack = stack;
   s->fp = NULL;
