@@ -845,30 +845,6 @@ extern void *Barray (aint* args, aint bn) {
   return r->contents;
 }
 
-extern void *Barray_rev (aint* args, aint bn) {
-  data   *r;
-  aint     n = UNBOX(bn);
-
-  PRE_GC();
-
-  for (aint i = 0; i < n; i++) {
-    push_extra_root((void**)&args[i]);
-  }
-
-  r = (data *)alloc_array(n);
-
-  for (int i = 0; i < n; i++) {
-    ((aint *)r->contents)[i] = args[n - i - 1];
-  }
-
-  for (aint i = n - 1; i >= 0; --i) {
-    pop_extra_root((void**)&args[i]);
-  }
-
-  POST_GC();
-  return r->contents;
-}
-
 #ifdef DEBUG_VERSION
 extern memory_chunk heap;
 #endif
@@ -893,35 +869,6 @@ extern void *Bsexp (aint* args, aint bn) {
   }
 
   r->tag = UNBOX(args[fields_cnt]);
-
-  for (aint i = fields_cnt - 1; i >= 0; --i) {
-    pop_extra_root((void**)&args[i]);
-  }
-
-  POST_GC();
-  return (void *)((data *)r)->contents;
-}
-
-extern void *Bsexp_rev (aint* args, aint bn) {
-  sexp   *r;
-  aint     n = UNBOX(bn);
-
-  PRE_GC();
-
-  aint fields_cnt = n - 1;
-
-  for (aint i = 0; i < fields_cnt; i++) {
-    push_extra_root((void**)&args[i]);
-  }
-
-  r              = alloc_sexp(fields_cnt);
-  r->tag         = 0;
-
-  for (int i = 0; i < fields_cnt; i++) {
-    ((auint *)r->contents)[i] = args[fields_cnt - i];
-  }
-
-  r->tag = UNBOX(args[0]);
 
   for (aint i = fields_cnt - 1; i >= 0; --i) {
     pop_extra_root((void**)&args[i]);
