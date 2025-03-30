@@ -104,6 +104,23 @@ static inline void call_Barray(size_t elem_count) {
     s_push(array);
 }
 
+void call_builtin(uint builtin_id, uint args_count) {
+#ifdef DEBUG_VERSION
+  printf("builtin id: %zu\n", builtin_id);
+#endif
+#ifndef WITH_CHECK
+    if (builtin_id >= BUILTIN_NONE) {
+      s_failure(&s, "invalid builtin");
+    }
+#endif
+
+    if (builtin_id == BUILTIN_Barray) {
+      call_Barray(args_count);
+    } else {
+      run_stdlib_func(builtin_id, args_count);
+    }
+}
+
 void run_main(Bytefile* bf, int argc, char **argv) {
 #ifdef DEBUG_VERSION
   printf("--- init state ---\n");
@@ -247,12 +264,8 @@ void run_main(Bytefile* bf, int argc, char **argv) {
       }
 
       case CMD_BASIC_SWAP: // SWAP
-      {
-        void *x = s_pop();
-        void *y = s_pop();
-        s_push(y);
-        s_push(x);
-      } break;
+        s_swap_tops();
+        break;
 
       case CMD_BASIC_ELEM: // ELEM
       {
@@ -373,11 +386,17 @@ void run_main(Bytefile* bf, int argc, char **argv) {
           s_push(*var_ptr);
         }
 #ifndef WITH_CHECK
+        // check correct offset
         if (call_offset >= s.bf->code_size) {
           s_failure(&s, "jump out of file");
         }
+        // or correct builtin // TODO: add this check to analyzer
+        if (call_offset < 0 && call_offset + 1 <= -BUILTIN_NONE) {
+          s_failure(&s, "closure");
+        }
 #endif
-        s_push(s.bf->code_ptr + call_offset);
+        // NOTE: call_offset < 0 => deal with closure of builtin function
+        s_push_i(BOX(call_offset));
 
         void *closure = Bclosure((aint *)__gc_stack_top, BOX(args_count));
         // printf("args is %li, count is %li\n", args_count, get_len(TO_DATA(closure)));
@@ -390,11 +409,11 @@ void run_main(Bytefile* bf, int argc, char **argv) {
       case CMD_CTRL_CALLC: {                  // CALLC %d // call clojure
         aint args_count = ip_read_int(&s.ip); // args count
 
+        aint closure_offset = UNBOX((char*)Belem(*s_nth(args_count), BOX(0)));
         call_happened = true;
         s.is_closure_call = true;
         s.call_ip = s.ip;
-
-        s.ip = (char*)Belem(*s_nth(args_count), BOX(0)); // use offset instead ??
+        s.ip = s.bf->code_ptr + closure_offset;
         break;
       }
 
@@ -435,6 +454,7 @@ void run_main(Bytefile* bf, int argc, char **argv) {
       case CMD_CTRL_FAIL: { // FAIL %d %d
         int line = ip_read_int(&s.ip);
         int col = ip_read_int(&s.ip);
+        print_stack(&s);
         Bmatch_failure(s_pop(), argv[0], BOX(line), BOX(col));
         break;
       }
@@ -447,24 +467,10 @@ void run_main(Bytefile* bf, int argc, char **argv) {
       case CMD_CTRL_BUILTIN: { // BUILTIN %d %d // call builtin
         size_t builtin_id = ip_read_int(&s.ip);
         size_t args_count = ip_read_int(&s.ip); // args count
-
-#ifdef DEBUG_VERSION
-        printf("builtin id: %zu\n", builtin_id);
-#endif
-#ifndef WITH_CHECK
-        if (builtin_id >= BUILTIN_NONE) {
-          s_failure(&s, "invalid builtin");
-        }
-#endif
-
-        if (builtin_id == BUILTIN_Barray) {
-          call_Barray(args_count);
-        } else {
-          run_stdlib_func(builtin_id, args_count);
-        }
+        call_builtin(builtin_id, args_count);
+        s.ip = s.call_ip; // TODO: check
         break;
-      }
-
+        }
       default:
         s_failure(&s, "interpreter: ctrl, invalid opcode"); // %d-%d\n", h, l);
       }
@@ -551,6 +557,7 @@ void run_main(Bytefile* bf, int argc, char **argv) {
       s_failure(&s, "invalid opcode"); // %d-%d\n", h, l);
     }
 
+    // NOTE: do not clear for now, assume that call are correct
     if (!call_happened) {
       s.is_closure_call = false;
       s.call_ip = NULL;
@@ -565,7 +572,7 @@ void run_main(Bytefile* bf, int argc, char **argv) {
   } while (1);
 stop:;
 #ifdef DEBUG_VERSION
-  printf("--- module run end ---\n");
+  printf("--- run end ---\n");
 #endif
 }
 

@@ -16,7 +16,7 @@
 //   CLOJURE_T = CLOSURE_TAG,
 // };
 
-#define STACK_SIZE 128 * 1024
+#define STACK_SIZE 512 * 1024
 
 static const size_t MAX_ARRAY_SIZE = 0x11111110;
 

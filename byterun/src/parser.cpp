@@ -272,9 +272,9 @@ template <bool use_out> static inline void print_space(std::ostream &out) {
 
 template <bool use_out, ArgT arg>
   requires(arg == ArgT::INT)
-static inline uint read_print_val(char **ip, const Bytefile &bf,
+static inline aint read_print_val(char **ip, const Bytefile &bf,
                                   std::ostream &out) {
-  uint val = ip_read_int_safe(ip, &bf);
+  aint val = ip_read_int_safe(ip, &bf);
   if constexpr (use_out) {
     out << val;
   }
@@ -283,11 +283,16 @@ static inline uint read_print_val(char **ip, const Bytefile &bf,
 
 template <bool use_out, ArgT arg>
   requires(arg == ArgT::OFFSET)
-static inline uint read_print_val(char **ip, const Bytefile &bf,
+static inline aint read_print_val(char **ip, const Bytefile &bf,
                                   std::ostream &out) {
-  uint val = ip_read_int_safe(ip, &bf);
+  aint val = ip_read_int_safe(ip, &bf);
   if constexpr (use_out) {
-    out << val;
+    // NOTE: < 0 for builtin closures
+    if (val >= 0) {
+      out << std::hex << val << std::dec;
+    } else {
+      out << val;
+    }
   }
   return val;
 }
@@ -500,7 +505,8 @@ std::pair<Cmd, uint8_t> parse_command_impl(char **ip, const Bytefile &bf,
       read_print_cmd_seq_opt<do_read_args, use_out>(cmd, l, ip, bf, out);
       print_space<use_out>(out);
       if constexpr (do_read_args) {
-        size_t call_p = read_print_val<use_out, ArgT::OFFSET>(ip, bf, out);
+        /*aint call_offset =*/read_print_val<use_out, ArgT::OFFSET>(ip, bf,
+                                                                    out);
         print_space<use_out>(out);
         size_t args_count = read_print_val<use_out, ArgT::INT>(ip, bf, out);
         for (size_t i = 0; i < args_count; i++) {
@@ -662,16 +668,16 @@ void print_file_info(const Bytefile &bf, std::ostream &out) {
 void print_file_code(const Bytefile &bf, std::ostream &out) {
   char *ip = bf.code_ptr;
 
-  while (true) {
+  while (ip - bf.code_ptr < bf.code_size) {
     out << "   " << std::setfill('0') << std::setw(8) << std::hex
         << ip - bf.code_ptr << ": " << std::dec;
     const auto [cmd, l] = parse_command(&ip, &bf, out);
     out << std::endl;
 
-    if (cmd == Cmd::EXIT) {
-      std::cout << "> EXIT" << std::endl;
-      break;
-    }
+    // if (cmd == Cmd::EXIT) {
+    //   std::cout << "> EXIT" << std::endl;
+    //   break;
+    // }
   }
 }
 

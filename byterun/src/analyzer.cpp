@@ -13,8 +13,10 @@ void analyze(Bytefile *bf, std::vector<size_t> &&add_publics) {
   static constexpr const int NOT_VISITED = -1;
   std::vector<int> visited(bf->code_size, NOT_VISITED); // store stack depth
 
-  std::vector<size_t> to_visit_func = std::move(add_publics);
+  std::vector<size_t> to_visit_func;
   std::vector<size_t> to_visit_jmp;
+
+  uint16_t mock_builtin_begin_counter = 0;
 
   int current_stack_depth = 0;
   const uint globals_count = bf->global_area_size;
@@ -84,6 +86,10 @@ void analyze(Bytefile *bf, std::vector<size_t> &&add_publics) {
     }
   };
 
+  for (const auto &add_public : add_publics) {
+    func_to_visit_push(add_public);
+  }
+
   // add publics
   to_visit_func.reserve(bf->public_symbols_number + to_visit_func.size());
   for (size_t i = 0; i < bf->public_symbols_number; ++i) {
@@ -136,8 +142,9 @@ void analyze(Bytefile *bf, std::vector<size_t> &&add_publics) {
 #endif
 
     if (current_begin_counter == nullptr && cmd != Cmd::BEGIN &&
-        cmd != Cmd::CBEGIN) {
-      ip_failure(saved_current_ip, bf, "function does not start with begin");
+        cmd != Cmd::CBEGIN && cmd != Cmd::BUILTIN) {
+      ip_failure(saved_current_ip, bf,
+                 "function does not start with begin and is not builtin");
     }
 
     if (visited[current_ip - bf->code_ptr] == NOT_VISITED) {
@@ -297,11 +304,18 @@ void analyze(Bytefile *bf, std::vector<size_t> &&add_publics) {
         ip_failure(saved_current_ip, bf, "jump/call out of file");
       }
 
-      if (!is_command_name(bf->code_ptr + call_offset, bf, Cmd::BEGIN)) {
-        ip_failure(saved_current_ip, bf, "call should point to begin");
-      }
-      if (args_count != *(uint *)(bf->code_ptr + call_offset + 1)) {
-        ip_failure(saved_current_ip, bf, "wrong call argument count");
+      if (is_command_name(bf->code_ptr + call_offset, bf, Cmd::BUILTIN)) {
+        if (args_count !=
+            *(uint *)(bf->code_ptr + call_offset + 1 + sizeof(uint32_t))) {
+          ip_failure(saved_current_ip, bf, "wrong builtin call argument count");
+        }
+      } else if (is_command_name(bf->code_ptr + call_offset, bf, Cmd::BEGIN)) {
+        if (args_count != *(uint *)(bf->code_ptr + call_offset + 1)) {
+          ip_failure(saved_current_ip, bf, "wrong call argument count");
+        }
+      } else {
+        ip_failure(saved_current_ip, bf,
+                   "call should point to begin or builtin");
       }
     } break;
     case Cmd::TAG:
@@ -329,12 +343,21 @@ void analyze(Bytefile *bf, std::vector<size_t> &&add_publics) {
         ip_failure(saved_current_ip, bf, "undefined builtin id");
       }
 
-      uint args_count = ip_read_int_unsafe(&current_ip);
-      current_stack_depth -= args_count;
-      if (current_stack_depth < 0) {
-        ip_failure(saved_current_ip, bf, "not enough elements in stack");
-      }
-      ++current_stack_depth;
+      // set mock counter to behave similary to begin
+      current_begin_counter = &mock_builtin_begin_counter;
+      *current_begin_counter = 0;
+      // add end to behave like end
+      ++func_end_found;
+
+      /*uint args_count = */ ip_read_int_unsafe(&current_ip);
+
+      // NOTE: done in corresponding CALL/CALLC
+      // TODO: no stack edit required then (?)
+      // current_stack_depth -= args_count;
+      // if (current_stack_depth < 0) {
+      //   ip_failure(saved_current_ip, bf, "not enough elements in stack");
+      // }
+      // ++current_stack_depth;
     } break;
     case Cmd::PATT:
       --current_stack_depth;
@@ -374,7 +397,8 @@ void analyze(Bytefile *bf, std::vector<size_t> &&add_publics) {
     }
 
     if (current_begin_counter == nullptr) {
-      ip_failure(saved_current_ip, bf, "function does not start with begin");
+      ip_failure(saved_current_ip, bf,
+                 "function does not start with begin and is not builtin");
     }
 
     if (current_stack_depth < 0) {
@@ -392,6 +416,7 @@ void analyze(Bytefile *bf, std::vector<size_t> &&add_publics) {
     case Cmd::EXIT:
     case Cmd::END:
     case Cmd::FAIL:
+    case Cmd::BUILTIN: // pseudo function without begin and end
       break;
 
     case Cmd::CJMPz:
@@ -402,15 +427,15 @@ void analyze(Bytefile *bf, std::vector<size_t> &&add_publics) {
     case Cmd::JMP: {
       bool is_call = (cmd == Cmd::CLOSURE || cmd == Cmd::CALL);
 
-      uint jmp_p = ip_read_int_unsafe(&current_ip);
-      if ((int)jmp_p >= bf->code_size) {
+      aint jmp_offset = ip_read_int_unsafe(&current_ip);
+      if (jmp_offset < 0 || jmp_offset >= bf->code_size) {
         // NOTE: maybe also should check that > begin (?)
         ip_failure(saved_current_ip, bf, "jump/call out of file");
       }
       if (is_call) {
-        func_to_visit_push(jmp_p);
+        func_to_visit_push(jmp_offset);
       } else {
-        jmp_to_visit_push(jmp_p);
+        jmp_to_visit_push(jmp_offset);
       }
       break;
     }

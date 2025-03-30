@@ -125,6 +125,14 @@ static inline void s_popn(size_t n) {
 
 // ------ complex operations ------
 
+static inline void s_swap_tops() {
+  // NOTE: can be optimized
+  void *x = s_pop();
+  void *y = s_pop();
+  s_push(x);
+  s_push(y);
+}
+
 // for some reason does not work in sexp constructor, probably connected with gc
 // behaviour
 static inline void s_put_nth(size_t n, void *val) {
