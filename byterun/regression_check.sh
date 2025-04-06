@@ -13,16 +13,17 @@ echo $compiler
 for test in ../regression/*.lama; do 
   echo $test
   $compiler -b  $test > /dev/null
-  test_file="${test%.*}"
-  echo $test_file
-  # cat $test_file.input | ./byterun.exe -p test*.bc > test.bc.code
-  # cat $test_file.input | ./byterun.exe -p test*.bc
-  # cat $test_file.input | ./byterun.exe -vi test*.bc
-  cat $test_file.input | ./byterun.exe -vi test*.bc > test.log
-  sed '1d;s/^..//' $test_file.t > test_orig.log
+  test_path="${test%.*}"
+  test_file="${test_path##*/}"
+  echo $test_path: $test_file
+  # cat $test_file.input | ./byterun.exe -p $test_file.bc > test.bc.code
+  # cat $test_file.input | ./byterun.exe -p $test_file.bc
+  # cat $test_file.input | ./byterun.exe -vi $test_file.bc
+  cat $test_path.input | ./byterun.exe -vi $test_file.bc > test.log
+  sed '1d;s/^..//' $test_path.t > test_orig.log
   diff test.log test_orig.log
 
-  rm test*.bc
+  rm $test_file.bc
   rm test.log test_orig.log
   echo "done"
 done

@@ -20,10 +20,11 @@ $compiler -b  ../stdlib/Fun.lama
 for test in regression/dep_test*.lama; do 
   echo $test
   $compiler -b  $test -I regression/
-  test_file="${test%.*}"
-  echo $test_file
-  cat $test_file.input | ./byterun.exe -vi dep_test*.bc
-  rm dep_test*.bc
+  test_path="${test%.*}"
+  test_file="${test_path##*/}"
+  echo $test_path: $test_file
+  cat $test_path.input | ./byterun.exe -vi $test_file.bc
+  rm $test_file.bc
   echo "done"
 done
 

@@ -12,27 +12,31 @@ echo $compiler
 
 echo "Build modules:"
 for mod in ../stdlib/*.lama; do 
-  echo $mod
-  $compiler -b $mod  -I ../stdlib/
+  mod_path="${mod%.*}"
+  mod_file="${mod_path##*/}"
+  echo $mod_path: $mod_file
+  if [ ! -f $mod_file.bc ]; then
+    $compiler -b $mod  -I ../stdlib/
+  fi
 done
 
 echo "Run tests:"
 for test in ../stdlib/regression/*.lama; do 
   echo $test
   $compiler -b  $test -I ../stdlib/ > /dev/null
-  test_file="${test%.*}"
-  echo $test_file
-  # cat $test_file.input | ./byterun.exe -p test*.bc > test.bc.code
-  # cat $test_file.input | ./byterun.exe -p test*.bc
-  echo "" | ./byterun.exe -vi test*.bc
-  # echo "" | ./byterun.exe -vi test*.bc > test.log
+  test_path="${test%.*}"
+  test_file="${test_path##*/}"
+  echo $test_path: $test_file
+  # cat $test_file.input | ./byterun.exe -p $test_file.bc > test.bc.code
+  # cat $test_file.input | ./byterun.exe -p $test_file.bc
+  echo "" | ./byterun.exe -vi $test_file.bc
+  # echo "" | ./byterun.exe -vi $test_file.bc > test.log
   # sed '1d;s/^..//' $test_file.t > test_orig.log
   # diff test.log test_orig.log
 
-  rm test*.bc
+  rm $test_file.bc
   # rm test.log test_orig.log
   echo "done"
 done
 
-rm *.bc
 rm *.o
