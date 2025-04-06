@@ -19,6 +19,23 @@
   DEF(CMD_BINOP_AND, &&)                                                       \
   DEF(CMD_BINOP_OR, ||)
 
+// NOTE: includes additional ':' operator
+#define FORALL_BINOP_FUNC(DEF)                                                 \
+  DEF(Ls__Infix_58)                                                            \
+  DEF(Ls__Infix_3333)                                                          \
+  DEF(Ls__Infix_3838)                                                          \
+  DEF(Ls__Infix_6161)                                                          \
+  DEF(Ls__Infix_3361)                                                          \
+  DEF(Ls__Infix_6061)                                                          \
+  DEF(Ls__Infix_60)                                                            \
+  DEF(Ls__Infix_6261)                                                          \
+  DEF(Ls__Infix_62)                                                            \
+  DEF(Ls__Infix_43)                                                            \
+  DEF(Ls__Infix_45)                                                            \
+  DEF(Ls__Infix_42)                                                            \
+  DEF(Ls__Infix_47)                                                            \
+  DEF(Ls__Infix_37)
+
 const char *read_cmd(char *ip, const Bytefile *bf);
 
 // Bytefile *read_file(const char *fname);

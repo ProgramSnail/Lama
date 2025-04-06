@@ -454,7 +454,7 @@ void run_main(Bytefile* bf, int argc, char **argv) {
       case CMD_CTRL_FAIL: { // FAIL %d %d
         int line = ip_read_int(&s.ip);
         int col = ip_read_int(&s.ip);
-        print_stack(&s);
+        print_stack(&s); // NOTE: debug info
         Bmatch_failure(s_pop(), argv[0], BOX(line), BOX(col));
         break;
       }

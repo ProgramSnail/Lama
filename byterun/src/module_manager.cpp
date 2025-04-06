@@ -492,7 +492,6 @@ struct StdFunc {
   bool is_vararg = false;
 };
 
-// TODO: FIXME: add kind, binops
 BUILTIN id_by_builtin(const char *name) {
   static const std::unordered_map<std::string, BUILTIN> std_func = {
       {"Luppercase", BUILTIN_Luppercase},
@@ -534,6 +533,14 @@ BUILTIN id_by_builtin(const char *name) {
       {"LgetEnv", BUILTIN_LgetEnv},
       {"Lrandom", BUILTIN_Lrandom},
       {"Ltime", BUILTIN_Ltime},
+      //
+      {"LkindOf", BUILTIN_LkindOf},
+      {"LcompareTags", BUILTIN_LcompareTags},
+  //
+#define BUILTIN_ELEM(name) {#name, BUILTIN_##name},
+      FORALL_BINOP_FUNC(BUILTIN_ELEM)
+#undef BUILTIN_ELEM
+      //
       {".array", BUILTIN_Barray},
   };
 
@@ -558,8 +565,10 @@ void run_stdlib_func(BUILTIN id, size_t args_count) {
     s_push(ret);
     break;
   case BUILTIN_Lassert:
-    // .args_count = 2, .is_vararg = true
-    call_anyarg_func<20>((void (*)()) & Lassert, args_count);
+    s_popn(args_count);
+    std::cout << "!!> assert is not properly checked yet, skipping\n";
+    // NOTE: basic params: .args_count = 2, .is_vararg = true
+    // call_anyarg_func<20>((void (*)()) & Lassert, args_count);
     break;
   case BUILTIN_Lstring:
     ret = Lstring(s_nth_i(0)); // .is_args = true
@@ -608,8 +617,10 @@ void run_stdlib_func(BUILTIN id, size_t args_count) {
     s_push(ret);
     break;
   case BUILTIN_Lsprintf:
-    // .args_count = 1, .is_vararg = true
-    call_anyarg_func<20>((void (*)()) & Lsprintf, args_count);
+    s_popn(args_count);
+    std::cout << "!!> printf is not properly checked yet, skipping\n";
+    // NOTE: basic params: .args_count = 1, .is_vararg = true
+    // call_anyarg_func<20>((void (*)()) & Lsprintf, args_count);
     break;
   case BUILTIN_Lsubstring:
     ret = (void *)Lsubstring(s_nth_i(0)); // .is_args = true;
@@ -671,8 +682,10 @@ void run_stdlib_func(BUILTIN id, size_t args_count) {
     s_push(ret);
     break;
   case BUILTIN_Lprintf:
-    // .args_count = 1, .is_vararg = true
-    call_anyarg_func<20>((void (*)()) & Lprintf, args_count);
+    s_popn(args_count);
+    std::cout << "!!> printf is not properly checked yet, skipping\n";
+    // NOTE: basic params: .args_count = 1, .is_vararg = true
+    // call_anyarg_func<20>((void (*)()) & Lprintf, args_count);
     break;
   case BUILTIN_Lfopen:
     ret = (void *)Lfopen((char *)*s_nth(1), (char *)*s_nth(0));
@@ -700,8 +713,10 @@ void run_stdlib_func(BUILTIN id, size_t args_count) {
     s_push(ret);
     break;
   case BUILTIN_Lfprintf:
-    // .args_count = 2, .is_vararg = true
-    call_anyarg_func<20>((void (*)()) & Lfprintf, args_count);
+    s_popn(args_count);
+    std::cout << "!!> printf is not properly checked yet, skipping\n";
+    // NOTE: basic params: .args_count = 2, .is_vararg = true
+    // call_anyarg_func<20>((void (*)()) & Lfprintf, args_count);
     break;
   case BUILTIN_Lregexp:
     ret = (void *)Lregexp((char *)*s_nth(0));
@@ -715,8 +730,9 @@ void run_stdlib_func(BUILTIN id, size_t args_count) {
     s_push(ret);
     break;
   case BUILTIN_Lfailure:
-    // .args_count = 1, .is_vararg = true
-    call_anyarg_func<20>((void (*)()) & Lfailure, args_count);
+    std::cout << "!!> failure is not properly checked yet, skipping\n";
+    // NOTE: basic params: .args_count = 1, .is_vararg = true
+    // call_anyarg_func<20>((void (*)()) & Lfailure, args_count);
     break;
   case BUILTIN_Lsystem:
     ret = (void *)Lsystem((char *)*s_nth(0));
@@ -737,6 +753,24 @@ void run_stdlib_func(BUILTIN id, size_t args_count) {
     ret = (void *)Ltime();
     s_push(ret);
     break;
+  case BUILTIN_LkindOf:
+    ret = (void *)LkindOf(*s_nth(0));
+    s_popn(1);
+    s_push(ret);
+    break;
+  case BUILTIN_LcompareTags:
+    ret = (void *)LcompareTags((char *)*s_nth(1), (char *)*s_nth(0));
+    s_popn(2);
+    s_push(ret);
+    break;
+#define BUILTIN_CASE(name)                                                     \
+  case BUILTIN_##name:                                                         \
+    ret = (void *)name((char *)*s_nth(1), (char *)*s_nth(0));                  \
+    s_popn(2);                                                                 \
+    s_push(ret);                                                               \
+    break;
+    FORALL_BINOP_FUNC(BUILTIN_CASE)
+#undef BUILTIN_CASE
   default:
     failure("RUNTIME ERROR: stdlib function <%u> not found\n", id);
     break;

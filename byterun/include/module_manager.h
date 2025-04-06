@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "parser.h"
 #include "utils.h"
 
 Bytefile *run_with_imports(Bytefile *root, int argc, char **argv,
@@ -50,8 +51,16 @@ enum BUILTIN : uint {
   BUILTIN_LgetEnv,         // 36
   BUILTIN_Lrandom,         // 37
   BUILTIN_Ltime,           // 38
-  BUILTIN_Barray,          // 39 // can't be run with run_stdlib_func
-  BUILTIN_NONE,            // 40
+  //
+  BUILTIN_LkindOf,      // 39
+  BUILTIN_LcompareTags, // 40
+//
+#define BUILTIN_NAME(name) BUILTIN_##name,
+  FORALL_BINOP_FUNC(BUILTIN_NAME)
+#undef BUILTIN_NAME
+  //
+  BUILTIN_Barray, // 41+14 // can't be run with run_stdlib_func
+  BUILTIN_NONE,   // 42+14
 };
 
 enum BUILTIN id_by_builtin(const char *name);
