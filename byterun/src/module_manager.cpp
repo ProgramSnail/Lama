@@ -108,8 +108,13 @@ void rewrite_code_with_offsets(Bytefile *bytefile, const Offsets &offsets) {
     case Cmd::LDA:
     case Cmd::ST:
       if (to_var_category(l) == VAR_GLOBAL) {
-        ip_write_int_unsafe(write_ip,
-                            ip_read_int_unsafe(&read_ip) + offsets.globals);
+        aint id = ip_read_int_unsafe(&read_ip);
+        if (id > 0) { // NOTE: do not rewrite sysargs usages
+          ip_write_int_unsafe(
+              write_ip,
+              id - 1 + offsets.globals); // rewrite with exclusion of local
+                                         // module sysargs reference
+        }
       }
       break;
     default:
@@ -239,7 +244,8 @@ Offsets calc_merge_sizes(const std::vector<Bytefile *> &bytefiles) {
   Offsets sizes{.strings = 0, .globals = 0, .code = 0, .publics_num = 0};
   for (size_t i = 0; i < bytefiles.size(); ++i) {
     sizes.strings += bytefiles[i]->stringtab_size;
-    sizes.globals += bytefiles[i]->global_area_size;
+    sizes.globals += bytefiles[i]->global_area_size -
+                     1; // NOTE: exclude default variable sysargs
     sizes.code += bytefiles[i]->code_size;
     // sizes.publics_num += bytefiles[i]->public_symbols_number;
   }
@@ -267,6 +273,9 @@ MergeResult merge_files(std::vector<Bytefile *> &&bytefiles) {
   auto [builtins_code, builtins_code_size] =
       gen_builtins(sizes.code, builtins_map);
   sizes.code += builtins_code_size;
+
+  // V,sysparams fro, Std
+  ++sizes.globals;
 
   Bytefile *result =
       (Bytefile *)malloc(sizeof(Bytefile) + sizes.strings + sizes.code +
@@ -322,7 +331,10 @@ MergeResult merge_files(std::vector<Bytefile *> &&bytefiles) {
   result->substs_ptr = NULL;
 
   // update & merge code segments
-  Offsets offsets{.strings = 0, .globals = 0, .code = 0, .publics_num = 0};
+  Offsets offsets{.strings = 0,
+                  .globals = 1,
+                  .code = 0,
+                  .publics_num = 0}; // NOTE: one global: sysargs
   // REMOVE printf("merge bytefiles\n");
   for (size_t i = 0; i < bytefiles.size(); ++i) {
     // REMOVE printf("rewrite offsets %zu\n", i);
@@ -346,7 +358,8 @@ MergeResult merge_files(std::vector<Bytefile *> &&bytefiles) {
 
     // update offsets
     offsets.strings += bytefiles[i]->stringtab_size;
-    offsets.globals += bytefiles[i]->global_area_size;
+    offsets.globals +=
+        bytefiles[i]->global_area_size - 1; // NOTE: exclude sysargs
     offsets.code += bytefiles[i]->code_size;
     // offsets.publics_num += bytefiles[i]->public_symbols_number;
 

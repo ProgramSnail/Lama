@@ -72,7 +72,8 @@ void set_argc_argv(int argc, char **argv) {
     void *args_array = Barray((aint *)s_peek(), BOX(argc));
     s_popn(argc);
     s_push(args_array);
-    *var_by_category(VAR_GLOBAL, 0) = args_array; // NOTE: implementation detail, stdlib/test26.lama
+    // NOTE: V,sysargs from Std
+    *var_by_category(VAR_GLOBAL, 0) = args_array;
 
 #ifdef DEBUG_VERSION
   print_stack(&s);

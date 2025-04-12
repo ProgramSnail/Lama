@@ -176,8 +176,8 @@ module ByteCode = struct
     let externs = Stdlib.ref S.empty in
     let pubs = Stdlib.ref S.empty in
     let imports = Stdlib.ref S.empty in
-    let globals = Stdlib.ref M.empty in
-    let glob_count = Stdlib.ref 0 in
+    let globals = Stdlib.ref @@ M.add "sysargs" 0 @@ M.empty in (* sysargs is a vaiable from Std *)
+    let glob_count = Stdlib.ref 1 in (* sysargs *)
     let fixups = Stdlib.ref [] in
     let func_fixups = Stdlib.ref [] in
     let add_lab l = lmap := M.add l (Buffer.length code) !lmap in
@@ -298,7 +298,7 @@ module ByteCode = struct
       (* 0x54 l:32 n:32 d*:32 *)
       | CLOSURE (s, ds) ->
           add_bytes [ (5 * 16) + 4 ];
-          add_fixup s;
+          add_func_fixup s;
           add_ints [ 0; List.length ds ];
           add_designations None ds
       (* 0x55 n:32            *)
@@ -373,7 +373,7 @@ module ByteCode = struct
             @@
             try M.find l !lmap
             with Not_found ->
-              failwith (Printf.sprintf "ERROR: undefined label '%s'" l) ))
+              failwith (Printf.sprintf "ERROR: undefined label of public '%s'" l) ))
       @@ S.elements !pubs
     in
     let str_table = Buffer.to_bytes st.StringTab.buffer in
@@ -1314,6 +1314,10 @@ class env cmd imports =
   end [@@ocaml.warning "-15"]
 
 let compile cmd ((imports, _), p) =
+  (* TODO: better solution *)
+  let replace_escaped_symbols s = Str.global_replace (Str.regexp "\\\\n") "\n" @@
+                                  Str.global_replace (Str.regexp "\\\\r") "\r" @@
+                                  Str.global_replace (Str.regexp "\\\\t") "\t" s in
   let rec pattern env lfalse = function
     | Pattern.Wildcard -> (env, false, [ DROP ])
     | Pattern.Named (_, p) -> pattern env lfalse p
@@ -1477,7 +1481,7 @@ let compile cmd ((imports, _), p) =
         | _ -> (env, false, line @ [ LD acc ]))
     | Expr.Ref _ -> failwith "Should not happen. Indirect assignemts are temporarily prohibited."
     | Expr.Const n -> (env, false, [ CONST n ])
-    | Expr.String s -> (env, false, [ STRING s ])
+    | Expr.String s -> (env, false, [ STRING (replace_escaped_symbols s) ])
     | Expr.Binop (op, x, y) ->
         let lop, env = env#get_label in
         add_code (compile_list false lop env [ x; y ]) lop false [ BINOP op ]
