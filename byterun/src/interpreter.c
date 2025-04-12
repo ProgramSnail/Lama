@@ -395,6 +395,7 @@ void run_main(Bytefile* bf, int argc, char **argv) {
           s_failure(&s, "closure");
         }
 #endif
+        s_rotate_n(args_count);
         // NOTE: call_offset < 0 => deal with closure of builtin function
         s_push_i(BOX(call_offset));
 

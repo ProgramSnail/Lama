@@ -328,7 +328,7 @@ static inline void **var_by_category(enum VarCategory category, size_t id) {
       s_failure(&s,
                 "can't read arguments: too big id"); //, %i >= %ul", id, count);
     }
-    return ((void **)d->contents) + count - id; // order is not important
+    return ((void **)d->contents) + id + 1; // order is not important
   }
 
   return var;

@@ -12,32 +12,33 @@ extern "C" {
 
 #include <filesystem>
 #include <map>
-#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-template <size_t N, typename... Args>
+template <size_t N, bool return_value, typename... Args>
   requires(N == 0)
 void call_func(void (*f)(), size_t n, Args... args) {
-  // std::cout << std::endl << "args_count=" << n << " "; // TODO FIXME TMP
-  std::cout << std::endl; // TODO: TMP, to work with problematic \n display
   asm volatile("movq %0, %%r11"
                : /* no outputs */
                : "m"(n));
-  /*s_push(*/ ((void (*)(Args...))f)(args...); //);
-  s_push(0);
+  if constexpr (return_value) {
+    s_push(((void *(*)(Args...))f)(args...));
+  } else {
+    ((void (*)(Args...))f)(args...);
+    s_push(0);
+  }
 }
 
-template <size_t N, typename... Args>
+template <size_t N, bool return_value, typename... Args>
   requires(N != 0)
 void call_func(void (*f)(), size_t n, Args... args) {
   void *arg = s_pop();
-  call_func<N - 1, Args..., void *>(f, n, arg, args...);
+  call_func<N - 1, return_value, Args..., void *>(f, n, arg, args...);
   // TODO: check that arg is added on the right position
 }
 
-template <size_t N, bool do_check = true>
+template <size_t N, bool return_value, bool do_check = true>
 void call_anyarg_func(void (*f)(), size_t n) {
   if constexpr (do_check) {
     if (n > N) {
@@ -45,9 +46,9 @@ void call_anyarg_func(void (*f)(), size_t n) {
     }
   }
   if (n == N) {
-    call_func<N>(f, n);
+    call_func<N, return_value>(f, n);
   } else if constexpr (N > 0) {
-    call_anyarg_func<N - 1, false>(f, n);
+    call_anyarg_func<N - 1, return_value, false>(f, n);
   }
 }
 
@@ -591,7 +592,7 @@ void run_stdlib_func(BUILTIN id, size_t args_count) {
     break;
   case BUILTIN_Lassert:
     // NOTE: basic params: .args_count = 2, .is_vararg = true
-    call_anyarg_func<20>((void (*)()) & Lassert, args_count);
+    call_anyarg_func<20, false>((void (*)()) & Lassert, args_count);
     break;
   case BUILTIN_Lstring:
     ret = Lstring(s_nth_i(0)); // .is_args = true
@@ -641,7 +642,7 @@ void run_stdlib_func(BUILTIN id, size_t args_count) {
     break;
   case BUILTIN_Lsprintf:
     // NOTE: basic params: .args_count = 1, .is_vararg = true
-    call_anyarg_func<20>((void (*)()) & Lsprintf, args_count);
+    call_anyarg_func<20, true>((void (*)()) & Lsprintf, args_count);
     break;
   case BUILTIN_Lsubstring:
     // std::cout << "substr\n";
@@ -707,7 +708,7 @@ void run_stdlib_func(BUILTIN id, size_t args_count) {
     break;
   case BUILTIN_Lprintf:
     // NOTE: basic params: .args_count = 1, .is_vararg = true
-    call_anyarg_func<20>((void (*)()) & Lprintf, args_count);
+    call_anyarg_func<20, false>((void (*)()) & Lprintf, args_count);
     break;
   case BUILTIN_Lfopen:
     ret = (void *)Lfopen((char *)*s_nth(1), (char *)*s_nth(0));
@@ -736,7 +737,7 @@ void run_stdlib_func(BUILTIN id, size_t args_count) {
     break;
   case BUILTIN_Lfprintf:
     // NOTE: basic params: .args_count = 2, .is_vararg = true
-    call_anyarg_func<20>((void (*)()) & Lfprintf, args_count);
+    call_anyarg_func<20, false>((void (*)()) & Lfprintf, args_count);
     break;
   case BUILTIN_Lregexp:
     ret = (void *)Lregexp((char *)*s_nth(0));
@@ -751,7 +752,7 @@ void run_stdlib_func(BUILTIN id, size_t args_count) {
     break;
   case BUILTIN_Lfailure:
     // NOTE: basic params: .args_count = 1, .is_vararg = true
-    call_anyarg_func<20>((void (*)()) & Lfailure, args_count);
+    call_anyarg_func<20, false>((void (*)()) & Lfailure, args_count);
     break;
   case BUILTIN_Lsystem:
     ret = (void *)Lsystem((char *)*s_nth(0));
