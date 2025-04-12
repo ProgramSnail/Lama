@@ -19,9 +19,7 @@
   DEF(CMD_BINOP_AND, &&)                                                       \
   DEF(CMD_BINOP_OR, ||)
 
-// NOTE: includes additional ':' operator
 #define FORALL_BINOP_FUNC(DEF)                                                 \
-  DEF(Ls__Infix_58)                                                            \
   DEF(Ls__Infix_3333)                                                          \
   DEF(Ls__Infix_3838)                                                          \
   DEF(Ls__Infix_6161)                                                          \

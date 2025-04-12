@@ -27,6 +27,7 @@ for test in ../tutorial/*.lama; do
   test_file="${test_path##*/}"
   echo $test_path: $test_file
   echo " " | ./byterun.exe -vi $test_file.bc
+  echo "" | ./byterun.exe -vi $test_file.bc > test.log
   rm $test_file.bc
   echo "done"
 done

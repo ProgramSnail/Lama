@@ -69,13 +69,13 @@ void set_argc_argv(int argc, char **argv) {
 #endif
       s_push(Bstring((aint *)&argv[argc - i - 1]));
     }
-    s_push(Barray((aint *)s_peek(), argc));
-    void *argv_elem = s_pop();
+    void *args_array = Barray((aint *)s_peek(), BOX(argc));
     s_popn(argc);
-    s_push(argv_elem);
+    s_push(args_array);
+    *var_by_category(VAR_GLOBAL, 0) = args_array; // NOTE: implementation detail, stdlib/test26.lama
 
 #ifdef DEBUG_VERSION
-  print_stack(s);
+  print_stack(&s);
   printf("- state init done\n");
 #endif
 }
@@ -468,6 +468,13 @@ void run_main(Bytefile* bf, int argc, char **argv) {
         size_t builtin_id = ip_read_int(&s.ip);
         size_t args_count = ip_read_int(&s.ip); // args count
         call_builtin(builtin_id, args_count);
+        if (s.is_closure_call) {
+          // NOTE: all functions have returned value, some values undefined
+          // if (is_builtin_with_ret(builtin_id)) {
+            s_swap_tops();
+          // }
+          s_pop();
+        }
         s.ip = s.call_ip; // TODO: check
         break;
         }

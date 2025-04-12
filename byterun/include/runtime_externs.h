@@ -25,7 +25,7 @@ aint LkindOf(void *p);
 aint LcompareTags(void *p, void *q);
 
 // Functional synonym for built-in operator ":";
-void *Ls__Infix_58(void *p, void *q);
+void *Ls__Infix_58(void **args);
 
 // Functional synonym for built-in operator "!!";
 aint Ls__Infix_3333(void *p, void *q);

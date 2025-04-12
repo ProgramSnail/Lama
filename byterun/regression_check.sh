@@ -16,9 +16,9 @@ for test in ../regression/*.lama; do
   test_path="${test%.*}"
   test_file="${test_path##*/}"
   echo $test_path: $test_file
-  # cat $test_file.input | ./byterun.exe -p $test_file.bc > test.bc.code
-  # cat $test_file.input | ./byterun.exe -p $test_file.bc
-  # cat $test_file.input | ./byterun.exe -vi $test_file.bc
+  # cat $test_path.input | ./byterun.exe -p $test_file.bc > test.bc.code
+  # cat $test_path.input | ./byterun.exe -p $test_file.bc
+  # cat $test_path.input | ./byterun.exe -vi $test_file.bc
   cat $test_path.input | ./byterun.exe -vi $test_file.bc > test.log
   sed '1d;s/^..//' $test_path.t > test_orig.log
   diff test.log test_orig.log

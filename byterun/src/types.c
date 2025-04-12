@@ -58,7 +58,7 @@ void prepare_state(Bytefile* bf, struct State* s) {
 }
 
 void push_globals(struct State *s) {
-  s->bf->global_ptr = (void*)__gc_stack_top;
+  s->bf->global_ptr = s_peek(); // (void*)__gc_stack_top;
   s_pushn_nil(s->bf->global_area_size);
 
 #ifdef DEBUG_VERSION

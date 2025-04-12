@@ -28,5 +28,4 @@ for test in regression/dep_test*.lama; do
   echo "done"
 done
 
-rm *.bc
 rm *.o

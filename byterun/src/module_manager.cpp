@@ -19,15 +19,21 @@ extern "C" {
 
 template <size_t N, typename... Args>
   requires(N == 0)
-void call_func(void (*f)(), Args... args) {
-  s_push(((void *(*)(Args...))f)(args...));
+void call_func(void (*f)(), size_t n, Args... args) {
+  // std::cout << std::endl << "args_count=" << n << " "; // TODO FIXME TMP
+  std::cout << std::endl; // TODO: TMP, to work with problematic \n display
+  asm volatile("movq %0, %%r11"
+               : /* no outputs */
+               : "m"(n));
+  /*s_push(*/ ((void (*)(Args...))f)(args...); //);
+  s_push(0);
 }
 
 template <size_t N, typename... Args>
   requires(N != 0)
-void call_func(void (*f)(), Args... args) {
+void call_func(void (*f)(), size_t n, Args... args) {
   void *arg = s_pop();
-  call_func<N - 1, Args..., void *>(f, arg, args...);
+  call_func<N - 1, Args..., void *>(f, n, arg, args...);
   // TODO: check that arg is added on the right position
 }
 
@@ -39,7 +45,7 @@ void call_anyarg_func(void (*f)(), size_t n) {
     }
   }
   if (n == N) {
-    call_func<N>(f);
+    call_func<N>(f, n);
   } else if constexpr (N > 0) {
     call_anyarg_func<N - 1, false>(f, n);
   }
@@ -55,8 +61,6 @@ struct Offsets {
 };
 
 void rewrite_code_with_offsets(Bytefile *bytefile, const Offsets &offsets) {
-  // TODO: globals offsets
-
   char *ip = bytefile->code_ptr;
   while (ip - bytefile->code_ptr < bytefile->code_size) {
     char *instr_ip = ip;
@@ -73,6 +77,8 @@ void rewrite_code_with_offsets(Bytefile *bytefile, const Offsets &offsets) {
     char *write_ip = instr_ip + 1;
     switch (cmd) {
     case Cmd::STRING:
+    case Cmd::SEXP:
+    case Cmd::TAG:
       ip_write_int_unsafe(write_ip,
                           ip_read_int_unsafe(&read_ip) + offsets.strings);
       break;
@@ -85,16 +91,14 @@ void rewrite_code_with_offsets(Bytefile *bytefile, const Offsets &offsets) {
       break;
     case Cmd::CLOSURE: {
       aint offset = ip_read_int_unsafe(&read_ip);
-      // NOTE: do not modify offset for builtin's closures
-      ip_write_int_unsafe(write_ip,
-                          offset < 0 ? offset : offset + offsets.code);
+      ip_write_int_unsafe(write_ip, offset + offsets.code);
       size_t args_count = ip_read_int_unsafe(&read_ip);
       for (size_t i = 0; i < args_count; ++i) {
         uint8_t arg_type = ip_read_byte_unsafe(&read_ip);
+        aint value = ip_read_int_unsafe(&read_ip);
         if (to_var_category(arg_type) == VAR_GLOBAL) {
           write_ip = read_ip;
-          ip_write_int_unsafe(write_ip,
-                              ip_read_int_unsafe(&read_ip) + offsets.globals);
+          ip_write_int_unsafe(write_ip, value + offsets.globals);
         }
       }
       break;
@@ -173,8 +177,8 @@ void add_subst_builtin_offsets(BuiltinSubstMap &subst_map, size_t code_offset,
 // NOTE: unmanaged memory allocated
 std::pair<char *, size_t> gen_builtins(size_t code_offset,
                                        BuiltinSubstMap &subst_map) {
-  size_t code_size =
-      subst_map.size() * /*size of builtin command*/ (1 + 2 * sizeof(uint32_t));
+  size_t code_size = subst_map.size() *
+                     /*size of builtin command*/ (1 + 2 * sizeof(uint32_t));
   char *code = (char *)malloc(code_size);
 
   char *code_it = code;
@@ -377,7 +381,6 @@ Bytefile *path_mod_load(const char *name, std::filesystem::path &&path) {
 static std::vector<std::filesystem::path> search_paths;
 
 extern "C" {
-
 void mod_add_search_path(const char *path) { search_paths.emplace_back(path); }
 
 Bytefile *mod_load(const char *name) {
@@ -533,6 +536,7 @@ BUILTIN id_by_builtin(const char *name) {
       {"LgetEnv", BUILTIN_LgetEnv},
       {"Lrandom", BUILTIN_Lrandom},
       {"Ltime", BUILTIN_Ltime},
+      {"Ls__Infix_58", BUILTIN_Ls__Infix_58},
       //
       {"LkindOf", BUILTIN_LkindOf},
       {"LcompareTags", BUILTIN_LcompareTags},
@@ -549,6 +553,27 @@ BUILTIN id_by_builtin(const char *name) {
   return it == std_func.end() ? BUILTIN_NONE : it->second;
 }
 
+/* NOTE: all functions have returned value, some values undefined */
+// bool is_builtin_with_ret(BUILTIN id) {
+//   switch (id) {
+//   case BUILTIN_Lassert:
+//   case BUILTIN_Lsprintf:
+//   case BUILTIN_Lprintf:
+//   case BUILTIN_Lfclose:
+//   case BUILTIN_Lfwrite:
+//   case BUILTIN_Lfprintf:
+//   case BUILTIN_Lfailure:
+//     return false;
+//   default:
+//     return true;
+//   }
+// }
+
+/* NOTE: from src/X86_64.ml: */
+/* For vararg functions where we pass them in the stdlib function using va_list,
+   we have to unbox values to print them correctly.
+   For this we have special assemply functions in `printf.S`.
+   We additionally pass them amount of arguments to unbox using register r11. */
 void run_stdlib_func(BUILTIN id, size_t args_count) {
   // std::cout << "RUN BUILTIN: " << id << '\n'; // TODO: TMP
   void *ret = NULL;
@@ -565,10 +590,8 @@ void run_stdlib_func(BUILTIN id, size_t args_count) {
     s_push(ret);
     break;
   case BUILTIN_Lassert:
-    s_popn(args_count);
-    std::cout << "!!> assert is not properly checked yet, skipping\n";
     // NOTE: basic params: .args_count = 2, .is_vararg = true
-    // call_anyarg_func<20>((void (*)()) & Lassert, args_count);
+    call_anyarg_func<20>((void (*)()) & Lassert, args_count);
     break;
   case BUILTIN_Lstring:
     ret = Lstring(s_nth_i(0)); // .is_args = true
@@ -617,17 +640,18 @@ void run_stdlib_func(BUILTIN id, size_t args_count) {
     s_push(ret);
     break;
   case BUILTIN_Lsprintf:
-    s_popn(args_count);
-    std::cout << "!!> printf is not properly checked yet, skipping\n";
     // NOTE: basic params: .args_count = 1, .is_vararg = true
-    // call_anyarg_func<20>((void (*)()) & Lsprintf, args_count);
+    call_anyarg_func<20>((void (*)()) & Lsprintf, args_count);
     break;
   case BUILTIN_Lsubstring:
+    // std::cout << "substr\n";
+    s_rotate_n(3);                        // NOTE: is fix ?
     ret = (void *)Lsubstring(s_nth_i(0)); // .is_args = true;
     s_popn(3);
     s_push(ret);
     break;
   case BUILTIN_Li__Infix_4343:
+    s_rotate_n(2);                            // NOTE: is fix ?
     ret = (void *)Li__Infix_4343(s_nth_i(0)); // .is_args = true
     s_popn(2);
     s_push(ret);
@@ -682,10 +706,8 @@ void run_stdlib_func(BUILTIN id, size_t args_count) {
     s_push(ret);
     break;
   case BUILTIN_Lprintf:
-    s_popn(args_count);
-    std::cout << "!!> printf is not properly checked yet, skipping\n";
     // NOTE: basic params: .args_count = 1, .is_vararg = true
-    // call_anyarg_func<20>((void (*)()) & Lprintf, args_count);
+    call_anyarg_func<20>((void (*)()) & Lprintf, args_count);
     break;
   case BUILTIN_Lfopen:
     ret = (void *)Lfopen((char *)*s_nth(1), (char *)*s_nth(0));
@@ -695,7 +717,7 @@ void run_stdlib_func(BUILTIN id, size_t args_count) {
   case BUILTIN_Lfclose:
     /*ret = (void *)*/ Lfclose((FILE *)*s_nth(0));
     s_popn(1);
-    // s_push(ret); // NOTE: ??
+    s_push(0); // NOTE: UB on use
     break;
   case BUILTIN_Lfread:
     ret = (void *)Lfread((char *)*s_nth(0));
@@ -705,7 +727,7 @@ void run_stdlib_func(BUILTIN id, size_t args_count) {
   case BUILTIN_Lfwrite:
     /*ret = (void *)*/ Lfwrite((char *)*s_nth(1), (char *)*s_nth(0));
     s_popn(2);
-    // s_push(ret); // NOTE: ??
+    s_push(0); // NOTE: UB on use
     break;
   case BUILTIN_Lfexists:
     ret = (void *)Lfexists((char *)*s_nth(0));
@@ -713,10 +735,8 @@ void run_stdlib_func(BUILTIN id, size_t args_count) {
     s_push(ret);
     break;
   case BUILTIN_Lfprintf:
-    s_popn(args_count);
-    std::cout << "!!> printf is not properly checked yet, skipping\n";
     // NOTE: basic params: .args_count = 2, .is_vararg = true
-    // call_anyarg_func<20>((void (*)()) & Lfprintf, args_count);
+    call_anyarg_func<20>((void (*)()) & Lfprintf, args_count);
     break;
   case BUILTIN_Lregexp:
     ret = (void *)Lregexp((char *)*s_nth(0));
@@ -730,9 +750,8 @@ void run_stdlib_func(BUILTIN id, size_t args_count) {
     s_push(ret);
     break;
   case BUILTIN_Lfailure:
-    std::cout << "!!> failure is not properly checked yet, skipping\n";
     // NOTE: basic params: .args_count = 1, .is_vararg = true
-    // call_anyarg_func<20>((void (*)()) & Lfailure, args_count);
+    call_anyarg_func<20>((void (*)()) & Lfailure, args_count);
     break;
   case BUILTIN_Lsystem:
     ret = (void *)Lsystem((char *)*s_nth(0));
@@ -763,6 +782,12 @@ void run_stdlib_func(BUILTIN id, size_t args_count) {
     s_popn(2);
     s_push(ret);
     break;
+  case BUILTIN_Ls__Infix_58:
+    s_rotate_n(2);                                   // NOTE: is fix ?
+    ret = (void *)Ls__Infix_58((void **)s_nth_i(0)); // .is_args = true
+    s_popn(2);
+    s_push(ret);
+    break;
 #define BUILTIN_CASE(name)                                                     \
   case BUILTIN_##name:                                                         \
     ret = (void *)name((char *)*s_nth(1), (char *)*s_nth(0));                  \
@@ -784,7 +809,8 @@ void run_stdlib_func(BUILTIN id, size_t args_count) {
   // // TODO: move to bytecode verifier
   // if ((!func.is_vararg && func.args_count != args_count) ||
   //     func.args_count > args_count) {
-  //   failure("RUNTIME ERROR: stdlib function <%u> argument count <%zu> is not
+  //   failure("RUNTIME ERROR: stdlib function <%u> argument count <%zu> is
+  //   not
   //   "
   //           "expected (expected is <%s%zu>)\n",
   //           id, func.args_count, func.is_vararg ? ">=" : "=", args_count);

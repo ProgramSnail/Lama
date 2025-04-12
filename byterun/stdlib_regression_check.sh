@@ -21,16 +21,16 @@ for mod in ../stdlib/*.lama; do
 done
 
 echo "Run tests:"
-for test in ../stdlib/regression/*.lama; do 
+for test in ../stdlib/regression/*.lama; do
   echo $test
   $compiler -b  $test -I ../stdlib/ > /dev/null
   test_path="${test%.*}"
   test_file="${test_path##*/}"
   echo $test_path: $test_file
-  # cat $test_file.input | ./byterun.exe -p $test_file.bc > test.bc.code
-  # cat $test_file.input | ./byterun.exe -p $test_file.bc
-  echo "" | ./byterun.exe -vi $test_file.bc
-  # echo "" | ./byterun.exe -vi $test_file.bc > test.log
+  echo "" | ./byterun.exe -p $test_file.bc > test.bc.code
+  # echo "" | ./byterun.exe -p $test_file.bc
+  # echo "" | ./byterun.exe -vi $test_file.bc
+  echo "" | ./byterun.exe -vi $test_file.bc > test.log
   # sed '1d;s/^..//' $test_file.t > test_orig.log
   # diff test.log test_orig.log
 

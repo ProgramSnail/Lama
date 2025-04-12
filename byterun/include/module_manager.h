@@ -54,15 +54,17 @@ enum BUILTIN : uint {
   //
   BUILTIN_LkindOf,      // 39
   BUILTIN_LcompareTags, // 40
+  BUILTIN_Ls__Infix_58, // 41
 //
 #define BUILTIN_NAME(name) BUILTIN_##name,
   FORALL_BINOP_FUNC(BUILTIN_NAME)
 #undef BUILTIN_NAME
   //
-  BUILTIN_Barray, // 41+14 // can't be run with run_stdlib_func
-  BUILTIN_NONE,   // 42+14
+  BUILTIN_Barray, // 42+14 // can't be run with run_stdlib_func
+  BUILTIN_NONE,   // 43+14
 };
 
 enum BUILTIN id_by_builtin(const char *name);
 
+bool is_builtin_with_ret(enum BUILTIN id);
 void run_stdlib_func(enum BUILTIN id, size_t args_count);
