@@ -351,13 +351,7 @@ void analyze(Bytefile *bf, std::vector<size_t> &&add_publics) {
 
       /*uint args_count = */ ip_read_int_unsafe(&current_ip);
 
-      // NOTE: done in corresponding CALL/CALLC
-      // TODO: no stack edit required then (?)
-      // current_stack_depth -= args_count;
-      // if (current_stack_depth < 0) {
-      //   ip_failure(saved_current_ip, bf, "not enough elements in stack");
-      // }
-      // ++current_stack_depth;
+      // NOTE: args checks done in corresponding CALL/CALLC
     } break;
     case Cmd::PATT:
       --current_stack_depth;

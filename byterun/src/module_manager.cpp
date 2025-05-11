@@ -260,13 +260,6 @@ MergeResult merge_files(std::vector<Bytefile *> &&bytefiles) {
   Offsets sizes = calc_merge_sizes(bytefiles);
   size_t public_symbols_size = calc_publics_size(sizes.publics_num);
 
-#ifdef DEBUG_VERSION
-  std::cout << "- inputs:\n";
-  for (const auto &bf : bytefiles) {
-    print_file(*bf, std::cout);
-  }
-#endif
-
   // find all builtin variations ad extract them
   BuiltinSubstMap builtins_map;
   {
@@ -296,14 +289,7 @@ MergeResult merge_files(std::vector<Bytefile *> &&bytefiles) {
     size_t code_offset = 0;
     size_t globals_offset = 1; // NOTE: V,sysargs from, Std
     for (size_t i = 0; i < bytefiles.size(); ++i) {
-#ifdef DEBUG_VERSION
-      printf("bytefile <%zu>\n", i);
-
-#endif
       for (size_t j = 0; j < bytefiles[i]->public_symbols_number; ++j) {
-#ifdef DEBUG_VERSION
-        printf("symbol <%zu>:<%zu>\n", i, j);
-#endif
         const char *name = get_public_name_unsafe(bytefiles[i], j);
 
         size_t offset =
@@ -312,10 +298,6 @@ MergeResult merge_files(std::vector<Bytefile *> &&bytefiles) {
                  ? globals_offset // NOTE: is global id
                  : code_offset);  // NOTE: is function offset in code
 
-#ifdef DEBUG_VERSION
-        printf("symbol %s : %zu (code offset %zu, globals offset %zu)\n", name,
-               offset, code_offset, globals_offset);
-#endif
         if (strcmp(name, "main") == 0) {
           main_offsets.push_back(offset);
         } else if (!publics.insert({name, offset}).second) {
@@ -349,11 +331,8 @@ MergeResult merge_files(std::vector<Bytefile *> &&bytefiles) {
                   .globals = 1, // NOTE: V,sysargs from, Std
                   .code = 0,
                   .publics_num = 0};
-  // REMOVE printf("merge bytefiles\n");
   for (size_t i = 0; i < bytefiles.size(); ++i) {
-    // REMOVE printf("rewrite offsets %zu\n", i);
     rewrite_code_with_offsets(bytefiles[i], offsets);
-    // REMOVE printf("subst in code %zu\n", i);
     subst_in_code(bytefiles[i], publics, builtins_map);
 
     size_t publics_offset = calc_publics_size(offsets.publics_num);
@@ -397,12 +376,7 @@ MergeResult merge_files(std::vector<Bytefile *> &&bytefiles) {
 // ---
 
 Bytefile *path_mod_load(const char *name, std::filesystem::path &&path) {
-#ifdef DEBUG_VERSION
-  std::cout << "- module path load '" << name << "'\n";
-#endif
-  Bytefile *file = read_file(path.c_str());
-  return file;
-  // return read_file(path.c_str());
+  return read_file(path.c_str());
 }
 
 static std::vector<std::filesystem::path> search_paths;
@@ -428,26 +402,6 @@ Bytefile *mod_load(const char *name) {
 
 } // extern "C"
 
-// uint32_t mod_add(Bytefile *module, bool do_verification) {
-// #ifdef DEBUG_VERSION
-//   std::cout << "- add module, no name\n";
-// #endif
-//   return mod_add_impl(module, do_verification);
-// }
-
-// ModSearchResult mod_search_pub_symbol(const char *name) {
-//   auto it = manager.public_symbols_mods.find(name);
-//   if (it == manager.public_symbols_mods.end()) {
-//     return {.symbol_offset = 0, .mod_id = 0, .mod_file = NULL};
-//   }
-
-//   return {
-//       .symbol_offset = it->second.offset,
-//       .mod_id = it->second.mod_id,
-//       .mod_file = mod_get(it->second.mod_id),
-//   };
-// }
-
 void mod_load_rec(Bytefile *mod,
                   std::unordered_map<std::string, Bytefile *> &loaded,
                   std::vector<Bytefile *> &loaded_ord) {
@@ -461,7 +415,7 @@ void mod_load_rec(Bytefile *mod,
 #ifdef DEBUG_VERSION
       printf("- mod load <%s>\n", import_str);
 #endif
-      Bytefile *import_mod = mod_load(import_str); // TODO
+      Bytefile *import_mod = mod_load(import_str);
       if (import_mod == NULL) {
         failure("module <%s> not found\n", import_str);
       }
@@ -579,22 +533,6 @@ BUILTIN id_by_builtin(const char *name) {
 
   return it == std_func.end() ? BUILTIN_NONE : it->second;
 }
-
-/* NOTE: all functions have returned value, some values undefined */
-// bool is_builtin_with_ret(BUILTIN id) {
-//   switch (id) {
-//   case BUILTIN_Lassert:
-//   case BUILTIN_Lsprintf:
-//   case BUILTIN_Lprintf:
-//   case BUILTIN_Lfclose:
-//   case BUILTIN_Lfwrite:
-//   case BUILTIN_Lfprintf:
-//   case BUILTIN_Lfailure:
-//     return false;
-//   default:
-//     return true;
-//   }
-// }
 
 /* NOTE: from src/X86_64.ml: */
 /* For vararg functions where we pass them in the stdlib function using
@@ -827,19 +765,4 @@ void run_stdlib_func(BUILTIN id, size_t args_count) {
     failure("RUNTIME ERROR: stdlib function <%u> not found\n", id);
     break;
   }
-  // some functions do use on args pointer
-  // // NOTE: is checked on subst
-  // if (id > sizeof(std_func) / sizeof(StdFunc)) {
-  //   failure("RUNTIME ERROR: stdlib function <%u> not found\n", id);
-  // }
-
-  // // TODO: move to bytecode verifier
-  // if ((!func.is_vararg && func.args_count != args_count) ||
-  //     func.args_count > args_count) {
-  //   failure("RUNTIME ERROR: stdlib function <%u> argument count <%zu> is
-  //   not
-  //   "
-  //           "expected (expected is <%s%zu>)\n",
-  //           id, func.args_count, func.is_vararg ? ">=" : "=", args_count);
-  // }
 }
