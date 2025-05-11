@@ -48,10 +48,6 @@ static inline void **s_peek() {
     s_failure(&s, "peek: empty function stack");
   }
 #endif
-#ifdef DEBUG_VERSION
-  printf("--> peek\n");
-#endif
-
   return (void **)__gc_stack_top;
 }
 
@@ -62,9 +58,6 @@ static inline void s_push(void *val) {
   if ((void **)__gc_stack_top == s.stack) {
     s_failure(&s, "stack overflow");
   }
-#endif
-#ifdef DEBUG_VERSION
-  printf("--> push\n");
 #endif
   __gc_stack_top -= sizeof(void *);
   *(void **)__gc_stack_top = val;
@@ -79,9 +72,6 @@ static inline void s_pushn_nil(size_t n) {
   if ((void **)__gc_stack_top + (aint)n - 1 <= s.stack) {
     s_failure(&s, "pushn: stack overflow");
   }
-#endif
-#ifdef DEBUG_VERSION
-  printf("--> push %zu\n", n);
 #endif
   for (size_t i = 0; i < n; ++i) {
     __gc_stack_top -= sizeof(void *);
@@ -98,9 +88,6 @@ static inline void *s_pop() {
     s_failure(&s, "pop: empty function stack");
   }
 #endif
-#ifdef DEBUG_VERSION
-  printf("--> pop\n");
-#endif
   void *value = *(void **)__gc_stack_top;
   __gc_stack_top += sizeof(void *);
   return value;
@@ -116,9 +103,6 @@ static inline void s_popn(size_t n) {
   if (s.fp != NULL && (void **)__gc_stack_top + (aint)n - 1 >= f_locals(s.fp)) {
     s_failure(&s, "popn: empty function stack");
   }
-#endif
-#ifdef DEBUG_VERSION
-  printf("--> popn %zu\n", n);
 #endif
   __gc_stack_top += n * sizeof(void *);
 }
@@ -180,11 +164,6 @@ static inline void s_rotate_n(size_t n) {
 // location before / after new frame added
 static inline void s_enter_f(char *rp, bool is_closure_call, auint args_sz,
                              auint locals_sz) {
-#ifdef DEBUG_VERSION
-  printf("-> %i args sz\n", args_sz);
-  printf("-> %i locals sz\n", locals_sz);
-#endif
-
   // check that params count is valid
   if ((void **)__gc_stack_top + (aint)args_sz - (is_closure_call ? 0 : 1) >=
       s_top()) {
@@ -232,15 +211,9 @@ static inline void s_exit_f() {
   // drop stack entities, locals, frame
   size_t to_pop = f_args(s.fp) - (void **)__gc_stack_top;
   s.fp = (struct Frame *)f_prev_fp(&frame);
-#ifdef DEBUG_VERSION
-  printf("-> %zu to pop\n", to_pop);
-#endif
   s_popn(to_pop);
 
   // drop args
-#ifdef DEBUG_VERSION
-  printf("-> + %zu to pop\n", f_args_sz(&frame));
-#endif
   s_popn(f_args_sz(&frame));
 
   if (frame.closure) {
@@ -321,9 +294,6 @@ static inline void **var_by_category(enum VarCategory category, size_t id) {
     }
     data *d = TO_DATA(s.fp->closure);
     int count = get_len(d) - 1;
-#ifdef DEBUG_VERSION
-    printf("id is %i, count is %i\n", id, count);
-#endif
     if ((int64_t)id >= count) {
       s_failure(&s,
                 "can't read arguments: too big id"); //, %i >= %ul", id, count);

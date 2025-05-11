@@ -31,7 +31,6 @@ void init_state(struct State* s, void** stack) {
   __gc_stack_top = __gc_stack_bottom;
 
 #ifdef DEBUG_VERSION
-  print_stack(s);
   printf("- state init done\n");
 #endif
 }
@@ -52,7 +51,6 @@ void prepare_state(Bytefile* bf, struct State* s) {
   s->instr_ip = s->ip;
 
 #ifdef DEBUG_VERSION
-  print_stack(s);
   printf("- mod state init done\n");
 #endif
 }
@@ -62,7 +60,6 @@ void push_globals(struct State *s) {
   s_pushn_nil(s->bf->global_area_size);
 
 #ifdef DEBUG_VERSION
-  print_stack(s);
   printf("- state globals init done\n");
 #endif
 }

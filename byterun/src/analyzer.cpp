@@ -93,7 +93,10 @@ void analyze(Bytefile *bf, std::vector<size_t> &&add_publics) {
   // add publics
   to_visit_func.reserve(bf->public_symbols_number + to_visit_func.size());
   for (size_t i = 0; i < bf->public_symbols_number; ++i) {
-    func_to_visit_push(get_public_offset_safe(bf, i));
+    const char *name = get_public_name_unsafe(bf, i);
+    if (memcmp(name, GLOBAL_VAR_TAG, GLOBAL_VAR_TAG_LEN) != 0) {
+      func_to_visit_push(get_public_offset_safe(bf, i));
+    }
   }
 
   if (to_visit_func.size() == 0) {

@@ -54,6 +54,12 @@ static inline size_t get_public_name_offset_unsafe(const Bytefile *bf,
   return bf->public_ptr[i * 2];
 }
 
+/* Sets a name offset for a public symbol */
+static inline void set_public_name_offset_unsafe(size_t offset,
+                                                 const Bytefile *bf, size_t i) {
+  bf->public_ptr[i * 2] = offset;
+}
+
 /* Gets a name for a public symbol */
 static inline const char *get_public_name_unsafe(const Bytefile *bf, size_t i) {
   return get_string_unsafe(bf, get_public_name_offset_unsafe(bf, i));
@@ -62,6 +68,12 @@ static inline const char *get_public_name_unsafe(const Bytefile *bf, size_t i) {
 /* Gets an offset for a publie symbol */
 static inline size_t get_public_offset_unsafe(const Bytefile *bf, size_t i) {
   return bf->public_ptr[i * 2 + 1];
+}
+
+/* Sets an offset for a publie symbol */
+static inline void set_public_offset_unsafe(size_t offset, const Bytefile *bf,
+                                            size_t i) {
+  bf->public_ptr[i * 2 + 1] = offset;
 }
 
 // read from ip

@@ -1,5 +1,4 @@
 #include <cstring>
-#include <iostream>
 extern "C" {
 #include "interpreter.h"
 #include "module_manager.h"
@@ -16,9 +15,6 @@ extern "C" {
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-static const constexpr char *GLOBAL_VAR_TAG = "global_";
-static const size_t GLOBAL_VAR_TAG_LEN = std::strlen(GLOBAL_VAR_TAG);
 
 template <size_t N, bool return_value, typename... Args>
   requires(N == 0)
@@ -65,6 +61,16 @@ struct Offsets {
 };
 
 void rewrite_code_with_offsets(Bytefile *bytefile, const Offsets &offsets) {
+  // rewrite publics
+  for (size_t i = 0; i < bytefile->public_symbols_number; ++i) {
+    set_public_name_offset_unsafe(get_public_name_offset_unsafe(bytefile, i) +
+                                      offsets.strings,
+                                  bytefile, i);
+    set_public_offset_unsafe(
+        get_public_offset_unsafe(bytefile, i) + offsets.code, bytefile, i);
+  }
+
+  // rewrite code
   char *ip = bytefile->code_ptr;
   while (ip - bytefile->code_ptr < bytefile->code_size) {
     char *instr_ip = ip;
@@ -143,10 +149,8 @@ void print_subst_to_bytes(BuiltinSubst subst, char **loc) {
 
 using BuiltinSubstMap = std::map<BuiltinSubst,
                                  /*generated builtin offset*/ size_t>;
-// std::vector<size_t> /*subst offsets*/>;
 
-// TODO: shared iteration over substs in functions
-void add_subst_builtin_offsets(BuiltinSubstMap &subst_map, size_t code_offset,
+void add_subst_builtin_offsets(BuiltinSubstMap &subst_map,
                                const Bytefile *bytefile) {
   for (size_t i = 0; i < bytefile->substs_area_size; ++i) {
     if (i + sizeof(uint32_t) >= bytefile->substs_area_size) {
@@ -173,7 +177,7 @@ void add_subst_builtin_offsets(BuiltinSubstMap &subst_map, size_t code_offset,
       char *ip = bytefile->code_ptr + offset;
       ip_read_int_unsafe(&ip);                       // read ptr placeholder
       uint32_t args_count = ip_read_int_unsafe(&ip); // read args count
-      subst_map[{builtin, args_count}] = 0; // .push_back(offset + code_offset);
+      subst_map[{builtin, args_count}] = 0;
     }
   }
 }
@@ -237,18 +241,40 @@ void subst_in_code(Bytefile *bytefile,
   }
 }
 
+Offsets initial_offsets() {
+  return {.strings = 0,
+          .globals = 1, // NOTE: V,sysargs from, Std
+          .code = 0,
+          .publics_num = 0};
+}
+
 Offsets calc_merge_sizes(const std::vector<Bytefile *> &bytefiles) {
-  Offsets sizes{.strings = 0,
-                .globals = 1, // NOTE: V,sysargs from, Std
-                .code = 0,
-                .publics_num = 0};
+  Offsets sizes = initial_offsets();
   for (size_t i = 0; i < bytefiles.size(); ++i) {
     sizes.strings += bytefiles[i]->stringtab_size;
     sizes.globals += bytefiles[i]->global_area_size;
     sizes.code += bytefiles[i]->code_size;
-    // sizes.publics_num += bytefiles[i]->public_symbols_number;
+    sizes.publics_num += bytefiles[i]->public_symbols_number;
   }
   return sizes;
+}
+
+void init_result_bytefile(Bytefile *result, const Offsets &sizes) {
+  result->code_size = sizes.code;
+  result->stringtab_size = sizes.strings;
+  result->global_area_size = sizes.globals;
+  result->substs_area_size = 0;
+  result->imports_number = 0;
+  result->public_symbols_number = sizes.publics_num;
+
+  result->main_offset = 0;
+  result->public_ptr = (int *)result->buffer;
+  result->string_ptr =
+      (char *)result->public_ptr + calc_publics_size(sizes.publics_num);
+  result->code_ptr = result->string_ptr + result->stringtab_size;
+  result->imports_ptr = NULL;
+  result->global_ptr = NULL;
+  result->substs_ptr = NULL;
 }
 
 struct MergeResult {
@@ -262,12 +288,8 @@ MergeResult merge_files(std::vector<Bytefile *> &&bytefiles) {
 
   // find all builtin variations ad extract them
   BuiltinSubstMap builtins_map;
-  {
-    size_t code_offset = 0;
-    for (size_t i = 0; i < bytefiles.size(); ++i) {
-      add_subst_builtin_offsets(builtins_map, code_offset, bytefiles[i]);
-      code_offset += bytefiles[i]->code_size;
-    }
+  for (const auto &bytefile : bytefiles) {
+    add_subst_builtin_offsets(builtins_map, bytefile);
   }
   auto [builtins_code, builtins_code_size] =
       gen_builtins(sizes.code, builtins_map);
@@ -275,17 +297,15 @@ MergeResult merge_files(std::vector<Bytefile *> &&bytefiles) {
 
   Bytefile *result =
       (Bytefile *)malloc(sizeof(Bytefile) + sizes.strings + sizes.code +
-                         public_symbols_size); // globals are on the stack
+                         public_symbols_size); // NOTE: globals are on the stack
 
   // collect publics
-  // TODO: add publics + updat name offsets too ?())
   std::unordered_map<std::string, size_t> publics;
   std::vector<size_t> main_offsets;
-
-  // NOTE: V,sysargs from, Std
-  publics.insert({"global_sysargs", 0});
-
   {
+    // NOTE: V,sysargs from Std
+    publics.insert({"global_sysargs", 0});
+
     size_t code_offset = 0;
     size_t globals_offset = 1; // NOTE: V,sysargs from, Std
     for (size_t i = 0; i < bytefiles.size(); ++i) {
@@ -310,27 +330,10 @@ MergeResult merge_files(std::vector<Bytefile *> &&bytefiles) {
   }
 
   // init result
-  result->code_size = sizes.code;
-  result->stringtab_size = sizes.strings;
-  result->global_area_size = sizes.globals;
-  result->substs_area_size = 0;
-  result->imports_number = 0;
-  result->public_symbols_number =
-      0; // sizes.publics_num; // TODO: correctly set and update publics
-
-  result->main_offset = 0; // TODO: save al main offsets in some way (?)
-  result->public_ptr = (int *)result->buffer;
-  result->string_ptr = (char *)result->public_ptr + public_symbols_size;
-  result->code_ptr = result->string_ptr + result->stringtab_size;
-  result->imports_ptr = NULL;
-  result->global_ptr = NULL;
-  result->substs_ptr = NULL;
+  init_result_bytefile(result, sizes);
 
   // update & merge code segments
-  Offsets offsets{.strings = 0,
-                  .globals = 1, // NOTE: V,sysargs from, Std
-                  .code = 0,
-                  .publics_num = 0};
+  Offsets offsets = initial_offsets();
   for (size_t i = 0; i < bytefiles.size(); ++i) {
     rewrite_code_with_offsets(bytefiles[i], offsets);
     subst_in_code(bytefiles[i], publics, builtins_map);
@@ -342,18 +345,15 @@ MergeResult merge_files(std::vector<Bytefile *> &&bytefiles) {
            bytefiles[i]->stringtab_size);
     memcpy(result->code_ptr + offsets.code, bytefiles[i]->code_ptr,
            bytefiles[i]->code_size);
-    // memcpy((char *)result->public_ptr + publics_offset,
-    //        (char *)bytefiles[i]->public_ptr,
-    //        calc_publics_size(
-    //            bytefiles[i]->public_symbols_number)); // TODO: recalc
-    //            publics:
-    //                                                   // offsets, strings
+    memcpy((char *)result->public_ptr + publics_offset,
+           (char *)bytefiles[i]->public_ptr,
+           calc_publics_size(bytefiles[i]->public_symbols_number));
 
     // update offsets
     offsets.strings += bytefiles[i]->stringtab_size;
     offsets.globals += bytefiles[i]->global_area_size;
     offsets.code += bytefiles[i]->code_size;
-    // offsets.publics_num += bytefiles[i]->public_symbols_number;
+    offsets.publics_num += bytefiles[i]->public_symbols_number;
 
     free(bytefiles[i]);
   }
@@ -375,7 +375,7 @@ MergeResult merge_files(std::vector<Bytefile *> &&bytefiles) {
 
 // ---
 
-Bytefile *path_mod_load(const char *name, std::filesystem::path &&path) {
+Bytefile *path_mod_load(std::filesystem::path &&path) {
   return read_file(path.c_str());
 }
 
@@ -388,12 +388,12 @@ Bytefile *mod_load(const char *name) {
   std::string full_name = std::string{name} + ".bc";
 
   if (std::filesystem::exists(full_name)) {
-    return path_mod_load(name, full_name);
+    return path_mod_load(full_name);
   }
   for (const auto &dir_path : search_paths) {
     auto path = dir_path / full_name;
     if (std::filesystem::exists(path)) {
-      return path_mod_load(name, std::move(path));
+      return path_mod_load(std::move(path));
     }
   }
 
@@ -405,16 +405,10 @@ Bytefile *mod_load(const char *name) {
 void mod_load_rec(Bytefile *mod,
                   std::unordered_map<std::string, Bytefile *> &loaded,
                   std::vector<Bytefile *> &loaded_ord) {
-#ifdef DEBUG_VERSION
-  printf("- run mod rec, %i imports\n", mod->imports_number);
-#endif
   for (size_t i = 0; i < mod->imports_number; ++i) {
     const char *import_str = get_import_safe(mod, i);
     if (loaded.count(import_str) == 0 &&
         strcmp(import_str, "Std") != 0) { // not loaded
-#ifdef DEBUG_VERSION
-      printf("- mod load <%s>\n", import_str);
-#endif
       Bytefile *import_mod = mod_load(import_str);
       if (import_mod == NULL) {
         failure("module <%s> not found\n", import_str);
@@ -434,13 +428,7 @@ MergeResult load_with_imports(Bytefile *root, bool do_verification) {
   MergeResult result = merge_files(std::move(loaded_ord));
 
   if (do_verification) {
-#ifdef DEBUG_VERSION
-    printf("main offsets count: %zu\n", result.main_offsets.size());
-#endif
     analyze(result.bf, std::move(result.main_offsets));
-#ifdef DEBUG_VERSION
-    std::cout << "verification done" << std::endl;
-#endif
   }
   return result;
 }
@@ -540,9 +528,7 @@ BUILTIN id_by_builtin(const char *name) {
    special assemply functions in `printf.S`. We additionally pass them amount
    of arguments to unbox using register r11. */
 void run_stdlib_func(BUILTIN id, size_t args_count) {
-  // std::cout << "RUN BUILTIN: " << id << '\n'; // TODO: TMP
   void *ret = NULL;
-  // TODO: deal with right pointers, etc.
   switch (id) {
   case BUILTIN_Luppercase:
     ret = (void *)Luppercase(*s_nth(0));

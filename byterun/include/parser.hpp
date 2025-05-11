@@ -8,6 +8,9 @@ extern "C" {
 #include "utils.h"
 }
 
+static const constexpr char *GLOBAL_VAR_TAG = "global_";
+static const size_t GLOBAL_VAR_TAG_LEN = strlen(GLOBAL_VAR_TAG);
+
 enum class Cmd : int8_t {
   BINOP,
   CONST,

@@ -74,18 +74,9 @@ void set_argc_argv(int argc, char **argv) {
     s_push(args_array);
     // NOTE: V,sysargs from Std
     *var_by_category(VAR_GLOBAL, 0) = args_array;
-
-#ifdef DEBUG_VERSION
-  print_stack(&s);
-  printf("- state init done\n");
-#endif
 }
 
 static inline void call_Bsexp(const char* name, size_t args_count) {
-#ifdef DEBUG_VERSION
-    printf("tag hash is %i, n is %i\n", UNBOX(LtagHash((char *)name)),
-           args_count);
-#endif
     s_push((void *)LtagHash((char *)name));
     s_rotate_n(args_count + 1);
 
@@ -106,9 +97,6 @@ static inline void call_Barray(size_t elem_count) {
 }
 
 void call_builtin(uint builtin_id, uint args_count) {
-#ifdef DEBUG_VERSION
-  printf("builtin id: %zu\n", builtin_id);
-#endif
 #ifndef WITH_CHECK
     if (builtin_id >= BUILTIN_NONE) {
       s_failure(&s, "invalid builtin");
@@ -123,10 +111,6 @@ void call_builtin(uint builtin_id, uint args_count) {
 }
 
 void run_main(Bytefile* bf, int argc, char **argv) {
-#ifdef DEBUG_VERSION
-  printf("--- init state ---\n");
-#endif
-
   prepare_state(bf, &s);
 
   void *buffer[BUFFER_SIZE];
@@ -438,12 +422,6 @@ void run_main(Bytefile* bf, int argc, char **argv) {
       case CMD_CTRL_TAG: { // TAG %s %d
         const char *name = ip_read_string(&s.ip);
         aint args_count = ip_read_int(&s.ip);
-
-#ifdef DEBUG_VERSION
-        printf("tag hash is %i, n is %i, peek is %i, unboxed: %li\n",
-               UNBOX(LtagHash((char *)name)), args_count, s_peek(&s), UNBOXED(s_peek(&s)));
-#endif
-
         s_push_i(Btag(s_pop(), LtagHash((char *)name), BOX(args_count)));
         break;
       }

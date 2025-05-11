@@ -41,30 +41,13 @@ int main(int argc, char **argv) {
     failure("no file name provided");
   }
 
-#ifdef DEBUG_VERSION
-  std::cout << "- read code file" << std::endl;
-#endif
-
   Bytefile *f = read_file(argv[2]);
   if (do_print) {
-#ifdef DEBUG_VERSION
-    std::cout << "- print code file" << std::endl;
-#endif
-
     print_file(*f, std::cout);
   }
   if (do_verification || do_interpretation) {
-#ifdef DEBUG_VERSION
-    std::cout << "- init stack" << std::endl;
-#endif
-
     size_t stack[STACK_SIZE];
     run_init(stack);
-
-#ifdef DEBUG_VERSION
-    std::cout << "- run with imports" << std::endl;
-#endif
-
     f = run_with_imports(f, argc - 2, argv + 2, do_verification);
   }
 
