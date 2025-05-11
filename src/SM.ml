@@ -176,16 +176,21 @@ module ByteCode = struct
     let externs = Stdlib.ref S.empty in
     let pubs = Stdlib.ref S.empty in
     let imports = Stdlib.ref S.empty in
-    let globals = Stdlib.ref @@ M.add "sysargs" 0 @@ M.empty in (* sysargs is a vaiable from Std *)
-    let glob_count = Stdlib.ref 1 in (* sysargs *)
+    let globals = Stdlib.ref @@ M.empty in
+    let glob_count = Stdlib.ref 1 in (* 0 is the placeholder for globals externs *)
     let fixups = Stdlib.ref [] in
     let func_fixups = Stdlib.ref [] in
+    let vars_substs = Stdlib.ref [] in
     let add_lab l = lmap := M.add l (Buffer.length code) !lmap in
-    let add_extern l = externs := S.add l !externs in
+    let add_extern l =
+      if String.starts_with ~prefix:"global_" l
+      then globals := M.add l 0 !globals (* 0 is the placeholder for globals externs *)
+      else externs := S.add l !externs in
     let add_public l = pubs := S.add l !pubs in
     let add_import l = imports := S.add l !imports in
     let add_fixup l = fixups := (Buffer.length code, l) :: !fixups in
     let add_func_fixup l = func_fixups := (Buffer.length code, l) :: !func_fixups in
+    let add_var_subst l = vars_substs := (Buffer.length code, l) :: !vars_substs in
     let add_bytes = List.iter (fun x -> Buffer.add_char code @@ Char.chr x) in
     let add_ints =
       List.iter (fun x -> Buffer.add_int32_ne code @@ Int32.of_int x)
@@ -198,16 +203,17 @@ module ByteCode = struct
       let b x = match n with None -> x | Some b -> (b * 16) + x in
       List.iter (function
         | Value.Global s ->
+            let s' = "global_" ^ s in
             let i =
-              try M.find s !globals
+              try M.find s' !globals
               with Not_found ->
                 let i = !glob_count in
                 incr glob_count;
-                globals := M.add s i !globals;
+                globals := M.add s' i !globals;
                 i
             in
             add_bytes [ b 0 ];
-            add_ints [ i ]
+            if i == 0 then (add_var_subst s'; add_ints [ 0 ]) else add_ints [ i - 1 ]
         | Value.Local n ->
             add_bytes [ b 1 ];
             add_ints [ n ]
@@ -341,6 +347,7 @@ module ByteCode = struct
     let substs = Stdlib.ref [] in
     let add_subst c l = substs := (c, l) :: !substs in
     List.iter insn_code insns;
+    substs := !vars_substs;
     add_bytes [ 255 ];
     let code = Buffer.to_bytes code in
     List.iter
@@ -371,7 +378,9 @@ module ByteCode = struct
           ( Int32.of_int @@ StringTab.add st l,
             Int32.of_int
             @@
-            try M.find l !lmap
+            let is_global = String.starts_with ~prefix:"global_" l in
+            (* 0 was reserved for extern globals *)
+            try (if is_global then Int.max (M.find l !globals - 1) 0 else M.find l !lmap)
             with Not_found ->
               failwith (Printf.sprintf "ERROR: undefined label of public '%s'" l) ))
       @@ S.elements !pubs
@@ -386,7 +395,7 @@ module ByteCode = struct
         Buffer.add_char subst_table (Char.chr 0))
       !substs;
     Buffer.add_int32_ne file (Int32.of_int @@ Bytes.length str_table);
-    Buffer.add_int32_ne file (Int32.of_int @@ !glob_count);
+    Buffer.add_int32_ne file (Int32.of_int @@ !glob_count - 1); (* 0 was reserved for extern globals *)
     Buffer.add_int32_ne file (Int32.of_int @@ Buffer.length subst_table);
     Buffer.add_int32_ne file (Int32.of_int @@ List.length imports);
     Buffer.add_int32_ne file (Int32.of_int @@ List.length pubs);

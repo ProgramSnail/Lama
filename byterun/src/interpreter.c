@@ -397,7 +397,6 @@ void run_main(Bytefile* bf, int argc, char **argv) {
         }
 #endif
         s_rotate_n(args_count);
-        // NOTE: call_offset < 0 => deal with closure of builtin function
         s_push_i(BOX(call_offset));
 
         void *closure = Bclosure((aint *)__gc_stack_top, BOX(args_count));
@@ -472,12 +471,10 @@ void run_main(Bytefile* bf, int argc, char **argv) {
         call_builtin(builtin_id, args_count);
         if (s.is_closure_call) {
           // NOTE: all functions have returned value, some values undefined
-          // if (is_builtin_with_ret(builtin_id)) {
-            s_swap_tops();
-          // }
+          s_swap_tops();
           s_pop();
         }
-        s.ip = s.call_ip; // TODO: check
+        s.ip = s.call_ip;
         break;
         }
       default:

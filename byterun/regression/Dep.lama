@@ -1,1 +1,3 @@
+public x = 1;
+
 public fun f(a, b) { a + b }

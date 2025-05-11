@@ -1,3 +1,4 @@
+#include <cstring>
 #include <iostream>
 extern "C" {
 #include "interpreter.h"
@@ -15,6 +16,9 @@ extern "C" {
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+static const constexpr char *GLOBAL_VAR_TAG = "global_";
+static const size_t GLOBAL_VAR_TAG_LEN = std::strlen(GLOBAL_VAR_TAG);
 
 template <size_t N, bool return_value, typename... Args>
   requires(N == 0)
@@ -35,7 +39,6 @@ template <size_t N, bool return_value, typename... Args>
 void call_func(void (*f)(), size_t n, Args... args) {
   void *arg = s_pop();
   call_func<N - 1, return_value, Args..., void *>(f, n, arg, args...);
-  // TODO: check that arg is added on the right position
 }
 
 template <size_t N, bool return_value, bool do_check = true>
@@ -96,10 +99,10 @@ void rewrite_code_with_offsets(Bytefile *bytefile, const Offsets &offsets) {
       size_t args_count = ip_read_int_unsafe(&read_ip);
       for (size_t i = 0; i < args_count; ++i) {
         uint8_t arg_type = ip_read_byte_unsafe(&read_ip);
-        aint value = ip_read_int_unsafe(&read_ip);
+        aint id = ip_read_int_unsafe(&read_ip);
         if (to_var_category(arg_type) == VAR_GLOBAL) {
           write_ip = read_ip;
-          ip_write_int_unsafe(write_ip, value + offsets.globals);
+          ip_write_int_unsafe(write_ip, id + offsets.globals);
         }
       }
       break;
@@ -109,12 +112,7 @@ void rewrite_code_with_offsets(Bytefile *bytefile, const Offsets &offsets) {
     case Cmd::ST:
       if (to_var_category(l) == VAR_GLOBAL) {
         aint id = ip_read_int_unsafe(&read_ip);
-        if (id > 0) { // NOTE: do not rewrite sysargs usages
-          ip_write_int_unsafe(
-              write_ip,
-              id - 1 + offsets.globals); // rewrite with exclusion of local
-                                         // module sysargs reference
-        }
+        ip_write_int_unsafe(write_ip, id + offsets.globals);
       }
       break;
     default:
@@ -227,25 +225,26 @@ void subst_in_code(Bytefile *bytefile,
           *(uint32_t *)(bytefile->code_ptr + offset + sizeof(uint32_t));
 
       *val_ptr = builtins.at({.id = builtin_id, .args_count = args_count});
-      continue;
-    }
+    } else {
+      // NOTE: works with globals too
+      const auto it = publics.find(name);
+      if (it == publics.end()) {
+        failure("public name for substitution is not found: <%s>\n", name);
+      }
 
-    const auto it = publics.find(name);
-    if (it == publics.end()) {
-      failure("public name for substitution is not found: <%s>\n", name);
+      *(uint32_t *)(bytefile->code_ptr + offset) = it->second;
     }
-
-    *(uint32_t *)(bytefile->code_ptr + offset) = it->second;
-    // TODO: check: +4 to match ?
   }
 }
 
 Offsets calc_merge_sizes(const std::vector<Bytefile *> &bytefiles) {
-  Offsets sizes{.strings = 0, .globals = 0, .code = 0, .publics_num = 0};
+  Offsets sizes{.strings = 0,
+                .globals = 1, // NOTE: V,sysargs from, Std
+                .code = 0,
+                .publics_num = 0};
   for (size_t i = 0; i < bytefiles.size(); ++i) {
     sizes.strings += bytefiles[i]->stringtab_size;
-    sizes.globals += bytefiles[i]->global_area_size -
-                     1; // NOTE: exclude default variable sysargs
+    sizes.globals += bytefiles[i]->global_area_size;
     sizes.code += bytefiles[i]->code_size;
     // sizes.publics_num += bytefiles[i]->public_symbols_number;
   }
@@ -261,6 +260,13 @@ MergeResult merge_files(std::vector<Bytefile *> &&bytefiles) {
   Offsets sizes = calc_merge_sizes(bytefiles);
   size_t public_symbols_size = calc_publics_size(sizes.publics_num);
 
+#ifdef DEBUG_VERSION
+  std::cout << "- inputs:\n";
+  for (const auto &bf : bytefiles) {
+    print_file(*bf, std::cout);
+  }
+#endif
+
   // find all builtin variations ad extract them
   BuiltinSubstMap builtins_map;
   {
@@ -274,9 +280,6 @@ MergeResult merge_files(std::vector<Bytefile *> &&bytefiles) {
       gen_builtins(sizes.code, builtins_map);
   sizes.code += builtins_code_size;
 
-  // V,sysparams fro, Std
-  ++sizes.globals;
-
   Bytefile *result =
       (Bytefile *)malloc(sizeof(Bytefile) + sizes.strings + sizes.code +
                          public_symbols_size); // globals are on the stack
@@ -285,8 +288,13 @@ MergeResult merge_files(std::vector<Bytefile *> &&bytefiles) {
   // TODO: add publics + updat name offsets too ?())
   std::unordered_map<std::string, size_t> publics;
   std::vector<size_t> main_offsets;
+
+  // NOTE: V,sysargs from, Std
+  publics.insert({"global_sysargs", 0});
+
   {
     size_t code_offset = 0;
+    size_t globals_offset = 1; // NOTE: V,sysargs from, Std
     for (size_t i = 0; i < bytefiles.size(); ++i) {
 #ifdef DEBUG_VERSION
       printf("bytefile <%zu>\n", i);
@@ -297,11 +305,16 @@ MergeResult merge_files(std::vector<Bytefile *> &&bytefiles) {
         printf("symbol <%zu>:<%zu>\n", i, j);
 #endif
         const char *name = get_public_name_unsafe(bytefiles[i], j);
-        size_t offset = get_public_offset_unsafe(bytefiles[i], j) + code_offset;
+
+        size_t offset =
+            get_public_offset_unsafe(bytefiles[i], j) +
+            (std::memcmp(name, GLOBAL_VAR_TAG, GLOBAL_VAR_TAG_LEN) == 0
+                 ? globals_offset // NOTE: is global id
+                 : code_offset);  // NOTE: is function offset in code
 
 #ifdef DEBUG_VERSION
-        printf("symbol %s : %zu (code offset %zu)\n", name, offset,
-               code_offset);
+        printf("symbol %s : %zu (code offset %zu, globals offset %zu)\n", name,
+               offset, code_offset, globals_offset);
 #endif
         if (strcmp(name, "main") == 0) {
           main_offsets.push_back(offset);
@@ -310,6 +323,7 @@ MergeResult merge_files(std::vector<Bytefile *> &&bytefiles) {
         }
       }
       code_offset += bytefiles[i]->code_size;
+      globals_offset += bytefiles[i]->global_area_size;
     }
   }
 
@@ -332,9 +346,9 @@ MergeResult merge_files(std::vector<Bytefile *> &&bytefiles) {
 
   // update & merge code segments
   Offsets offsets{.strings = 0,
-                  .globals = 1,
+                  .globals = 1, // NOTE: V,sysargs from, Std
                   .code = 0,
-                  .publics_num = 0}; // NOTE: one global: sysargs
+                  .publics_num = 0};
   // REMOVE printf("merge bytefiles\n");
   for (size_t i = 0; i < bytefiles.size(); ++i) {
     // REMOVE printf("rewrite offsets %zu\n", i);
@@ -358,8 +372,7 @@ MergeResult merge_files(std::vector<Bytefile *> &&bytefiles) {
 
     // update offsets
     offsets.strings += bytefiles[i]->stringtab_size;
-    offsets.globals +=
-        bytefiles[i]->global_area_size - 1; // NOTE: exclude sysargs
+    offsets.globals += bytefiles[i]->global_area_size;
     offsets.code += bytefiles[i]->code_size;
     // offsets.publics_num += bytefiles[i]->public_symbols_number;
 
@@ -584,10 +597,10 @@ BUILTIN id_by_builtin(const char *name) {
 // }
 
 /* NOTE: from src/X86_64.ml: */
-/* For vararg functions where we pass them in the stdlib function using va_list,
-   we have to unbox values to print them correctly.
-   For this we have special assemply functions in `printf.S`.
-   We additionally pass them amount of arguments to unbox using register r11. */
+/* For vararg functions where we pass them in the stdlib function using
+   va_list, we have to unbox values to print them correctly. For this we have
+   special assemply functions in `printf.S`. We additionally pass them amount
+   of arguments to unbox using register r11. */
 void run_stdlib_func(BUILTIN id, size_t args_count) {
   // std::cout << "RUN BUILTIN: " << id << '\n'; // TODO: TMP
   void *ret = NULL;

@@ -17,7 +17,7 @@ $compiler -b  ../stdlib/List.lama
 $compiler -b  ../stdlib/Ref.lama
 $compiler -b  ../stdlib/Fun.lama
 
-for test in regression/dep_test*.lama; do 
+for test in regression/dep_test*.lama; do
   echo $test
   $compiler -b  $test -I regression/
   test_path="${test%.*}"

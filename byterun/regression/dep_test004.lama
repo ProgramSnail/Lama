@@ -1,0 +1,3 @@
+import Dep;
+
+f(x, 1)

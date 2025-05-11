@@ -105,9 +105,7 @@ void *Lstring(aint *p);
 
 void *Bclosure(aint *args, aint bn);
 void *Barray(aint *args, aint bn);
-void *Barray_rev(aint *args, aint bn);
 void *Bsexp(aint *args, aint bn);
-void *Bsexp_rev(aint *args, aint bn);
 aint Btag(void *d, aint t, aint n);
 
 aint get_tag(data *d);
