@@ -2,7 +2,9 @@
 
 #include <any>
 #include <charconv>
+#include <functional>
 #include <iostream>
+#include <map>
 #include <unordered_map>
 
 std::vector<SMInstr> parse_sm(std::istream &in) {
@@ -28,14 +30,28 @@ std::vector<SMInstr> parse_sm(std::istream &in) {
   return result;
 }
 
-std::string substr_to(const std::string &line, size_t &pos, char to) {
+//
+
+struct EmptyArrayTok {};
+
+template <typename T> std::vector<T> any_array_cast(const std::any &v) {
+  if (v.type().name() == typeid(EmptyArrayTok).name()) {
+    return {};
+  }
+
+  return std::any_cast<std::vector<T>>(v);
+}
+
+//
+
+std::string_view substr_to(const std::string_view line, size_t &pos, char to) {
   auto offset = line.find(pos, to);
 
   if (offset == std::string::npos) {
     return "";
   };
 
-  std::string result = line.substr(pos, offset);
+  std::string_view result = line.substr(pos, offset);
   pos += offset + 1;
 
   return result;
@@ -43,17 +59,235 @@ std::string substr_to(const std::string &line, size_t &pos, char to) {
 
 // TODO: parsers + combinators
 
-// parse_str
-// parse_int
-// parse_bool
-// parse_opr
-// parse_patt
-// parse_var
+std::any parse_any_val(std::string_view s);
 
-// parse_array
-// parse_scope
+std::any parse_str(std::string_view s) {
+  if (s.size() < 2 || s.front() != '"') {
+    return {};
+  }
+  return s.substr(1, s.size() - 2);
+}
 
-// parse_or
+std::any parse_int(std::string_view s) {
+  int n = 0;
+  if (std::from_chars(s.data(), s.data() + s.size(), n).ec != std::errc{}) {
+    return {};
+  }
+
+  return n;
+}
+std::any parse_bool(std::string_view s) {
+  if (s == "true") {
+    return true;
+  } else if (s == "false") {
+    return false;
+  }
+
+  return {};
+}
+
+std::any parse_opr(std::string_view s) {
+  static const std::map<std::string, Opr, std::less<>> oprs = {
+      {"+", Opr::ADD},  // +
+      {"-", Opr::SUB},  // -
+      {"*", Opr::MULT}, // *
+      {"/", Opr::DIV},  // /
+      {"%", Opr::MOD},  // %
+      {"<=", Opr::LEQ}, // <=
+      {"<", Opr::LT},   // <
+      {">", Opr::GT},   // >
+      {">=", Opr::GEQ}, // >=
+      {"==", Opr::EQ},  // ==
+      {"!=", Opr::NEQ}, // !=
+      {"&&", Opr::AND}, // &&
+      {"!!", Opr::OR},  // !!
+  }; // TODO: check format: cpp vs lama
+
+  auto it = oprs.find(s);
+
+  if (it != oprs.end()) {
+    return it->second;
+  }
+
+  return {};
+}
+
+std::any parse_patt(std::string_view s) {
+  static const std::map<std::string, Patt, std::less<>> patts = {
+      {"Boxed", Patt::BOXED},   {"UnBoxed", Patt::UNBOXED},
+      {"Array", Patt::ARRAY},   {"String", Patt::STRING},
+      {"SExp", Patt::SEXP},     {"Closure", Patt::CLOSURE},
+      {"StrCmp", Patt::STRCMP},
+  }; // TODO: check
+
+  auto it = patts.find(s);
+
+  if (it != patts.end()) {
+    return it->second;
+  }
+
+  return {};
+}
+
+std::any parse_var(std::string_view s) {
+  static const std::map<std::string, std::function<ValT(std::any &&)>,
+                        std::less<>>
+      vars = {
+          {"Arg",
+           [](std::any &&n) {
+             return ValT::Arg{size_t(std::any_cast<int>(n))};
+           }},
+          {"Local",
+           [](std::any &&n) {
+             return ValT::Local{size_t(std::any_cast<int>(n))};
+           }},
+          {"Global",
+           [](std::any &&s) {
+             return ValT::Global{std::any_cast<std::string>(std::move(s))};
+           }},
+          {"Access",
+           [](std::any &&n) {
+             return ValT::Access{size_t(std::any_cast<int>(n))};
+           }},
+          {"Fun",
+           [](std::any &&s) {
+             return ValT::Fun{std::any_cast<std::string>(std::move(s))};
+           }},
+      }; // TODO: check
+
+  size_t pos = 0;
+  auto arg_str = std::string{substr_to(s, pos, ' ')};
+  if (arg_str.empty()) {
+    return {};
+  }
+  ++pos; // '('
+
+  if (s.size() <= pos + 1) {
+    return {};
+  }
+
+  auto id_str = s.substr(pos, s.size() - pos - 1);
+
+  auto arg_it = vars.find(arg_str);
+
+  std::any id = parse_any_val(id_str);
+  if (not id.has_value()) {
+    return {};
+  }
+
+  if (arg_it != vars.end()) {
+    try {
+      return arg_it->second(std::move(id));
+    } catch (const std::bad_any_cast &) {
+      return {};
+    }
+  }
+
+  return {};
+}
+
+// (_, _)
+std::any parse_pair(std::string_view s) { // TODO
+  if (s.size() < 2 || s.front() != '(') {
+    return {};
+  }
+
+  // TODO: duduce tokens ends in parsers to find next entity
+}
+
+// [_, ..., _]
+std::any parse_array(std::string_view s) { // TODO
+  if (s.size() < 2 || s.front() != '[') {
+    return {};
+  }
+
+  // TODO: deal with empty array
+
+  // TODO: duduce tokens ends in parsers to find next entity
+}
+
+// { blab="_"; elab="_" names=[...]; subs=[...]}
+std::any parse_scope(std::string_view s) {
+  if (s.size() < 2 || s.front() != '{') {
+    return {};
+  }
+
+  Scope scope;
+
+  size_t pos = 0;
+  // NOTE: expect no ';' in labels and names
+
+  // blab
+  substr_to(s, pos, '=');
+  auto blab_str = std::string{substr_to(s, pos, ';')};
+  if (blab_str.empty()) {
+    return {};
+  }
+
+  // elab
+  substr_to(s, pos, '=');
+  auto elab_str = std::string{substr_to(s, pos, ';')};
+  if (elab_str.empty()) {
+    return {};
+  }
+
+  // names
+  substr_to(s, pos, '=');
+  auto names_str = std::string{substr_to(s, pos, ';')};
+  if (names_str.empty()) {
+    return {};
+  }
+
+  // subs
+  substr_to(s, pos, '=');
+  auto subs_str = std::string{s.substr(pos, s.size() - pos - 1)};
+  if (subs_str.empty()) {
+    return {};
+  }
+
+  try {
+    scope.blab = std::any_cast<std::string>(parse_str(blab_str));
+    scope.elab = std::any_cast<std::string>(parse_str(elab_str));
+    scope.names =
+        any_array_cast<std::pair<std::string, int>>(parse_array(names_str));
+    scope.subs = any_array_cast<Scope>(parse_array(subs_str));
+  } catch (const std::bad_any_cast &) {
+    return {};
+  }
+
+  return scope;
+} // TODO
+
+std::any parse_any_val(std::string_view s) {
+  std::any val;
+
+  if (val = parse_str(s); val.has_value()) {
+    return val;
+  }
+  if (val = parse_int(s); val.has_value()) {
+    return val;
+  }
+  if (val = parse_bool(s); val.has_value()) {
+    return val;
+  }
+  if (val = parse_opr(s); val.has_value()) {
+    return val;
+  }
+  if (val = parse_patt(s); val.has_value()) {
+    return val;
+  }
+  if (val = parse_var(s); val.has_value()) {
+    return val;
+  }
+  if (val = parse_array(s); val.has_value()) {
+    return val;
+  }
+  if (val = parse_scope(s); val.has_value()) {
+    return val;
+  }
+
+  return {};
+}
 
 struct SMInstrBuilder {
 public:
@@ -80,7 +314,7 @@ public:
               },
               [&args = args](SMInstr::CLOSURE x) -> SMInstr {
                 x.name = std::any_cast<int>(args.at(0));
-                x.closure = std::any_cast<std::vector<ValT>>(args.at(1));
+                x.closure = any_array_cast<ValT>(args.at(1));
                 return x;
               },
               [&args = args](SMInstr::CONST x) -> SMInstr {
@@ -134,9 +368,9 @@ public:
                 x.f = std::any_cast<std::string>(args.at(0));
                 x.nargs = std::any_cast<int>(args.at(1));
                 x.nlocals = std::any_cast<int>(args.at(2));
-                x.closure = std::any_cast<std::vector<ValT>>(args.at(3));
-                x.args = std::any_cast<std::vector<std::string>>(args.at(4));
-                x.scopes = std::any_cast<std::vector<Scope>>(args.at(5));
+                x.closure = any_array_cast<ValT>(args.at(3));
+                x.args = any_array_cast<std::string>(args.at(4));
+                x.scopes = any_array_cast<Scope>(args.at(5));
                 return x;
               },
               [](SMInstr::END x) -> SMInstr { return x; },
@@ -240,7 +474,7 @@ std::optional<SMInstr> parse_sm(const std::string &line) {
   };
 
   size_t pos = 0;
-  std::string cmd = substr_to(line, pos, ' ');
+  auto cmd = std::string{substr_to(line, pos, ' ')};
 
   auto instr_it = to_instr.find(cmd);
   if (instr_it == to_instr.end()) {
@@ -253,9 +487,10 @@ std::optional<SMInstr> parse_sm(const std::string &line) {
     return instr.build();
   }
 
-  if (std::string space = substr_to(line, pos, '('); space != " ") {
-    return std::nullopt;
-  }
+  // NOTE: do not check for valid input
+  // if (auto space = std::string{substr_to(line, pos, '(')}; space != " ") {
+  //   return std::nullopt;
+  // }
 
   // TODO: Automatically parse any structures with parser combinators
   // if (cmd == "BEGIN") {
@@ -288,8 +523,8 @@ std::optional<SMInstr> parse_sm(const std::string &line) {
   //     } else if (auto maybe_patt = parse_patt(arg); maybe_patt) {
   //       instr.push_arg(*maybe_patt);
   //     } else if (int n = 0; std::from_chars(line.data() + pos,
-  //                                           line.data() + pos + line.size(),
-  //                                           n)
+  //                                           line.data() + pos +
+  //                                           line.size(), n)
   //                               .ec == std::errc{}) {
   //       instr.push_arg(n);
   //     } else {
