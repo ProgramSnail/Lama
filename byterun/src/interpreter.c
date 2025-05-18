@@ -327,7 +327,7 @@ void run_main(Bytefile* bf, int argc, char **argv) {
         s_enter_f(s.call_ip /*ip from call*/,
                   s.is_closure_call, args_sz, locals_sz);
 #ifndef WITH_CHECK
-        if ((void **)__gc_stack_top + (aint)max_additional_stack_sz - 1 <= s.stack) {
+        if (s_peek_unsafe() + (aint)max_additional_stack_sz - 1 <= s.stack) {
           s_failure(&s, "stack overflow");
         }
 #endif
@@ -351,7 +351,7 @@ void run_main(Bytefile* bf, int argc, char **argv) {
         s_enter_f(s.call_ip /*ip from call*/,
                   s.is_closure_call, args_sz, locals_sz);
 #ifndef WITH_CHECK
-        if ((void **)__gc_stack_top + (aint)max_additional_stack_sz - 1 <= s.stack) {
+        if (s_peek_unsafe() + (aint)max_additional_stack_sz - 1 <= s.stack) {
           s_failure(&s, "stack overflow");
         }
 #endif
@@ -383,7 +383,7 @@ void run_main(Bytefile* bf, int argc, char **argv) {
         s_rotate_n(args_count);
         s_push_i(BOX(call_offset));
 
-        void *closure = Bclosure((aint *)__gc_stack_top, BOX(args_count));
+        void *closure = Bclosure((aint *)s_peek(), BOX(args_count));
         // printf("args is %li, count is %li\n", args_count, get_len(TO_DATA(closure)));
 
         s_popn(args_count + 1);

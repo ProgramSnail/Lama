@@ -1,7 +1,6 @@
-#include <cstring>
 extern "C" {
-#include "interpreter.h"
 #include "module_manager.h"
+#include "interpreter.h"
 #include "runtime_externs.h"
 #include "stack.h"
 #include "utils.h"
@@ -10,7 +9,9 @@ extern "C" {
 #include "analyzer.hpp"
 #include "parser.hpp"
 
+#include <cstring>
 #include <filesystem>
+#include <iostream>
 #include <map>
 #include <string>
 #include <unordered_map>

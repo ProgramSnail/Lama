@@ -12,7 +12,7 @@ extern size_t __gc_stack_top, __gc_stack_bottom;
 // --- State ---
 
 void init_state(struct State* s, void** stack) {
-  __init(); // FIXME, disable gc
+  __init();
 
   s->stack = stack;
   s->fp = NULL;
@@ -28,7 +28,7 @@ void init_state(struct State* s, void** stack) {
   }
 
   __gc_stack_bottom = (size_t)(s->stack + STACK_SIZE);
-  __gc_stack_top = __gc_stack_bottom;
+  __gc_stack_top = __gc_stack_bottom - sizeof(void*);
 
 #ifdef DEBUG_VERSION
   printf("- state init done\n");

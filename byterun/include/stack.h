@@ -16,9 +16,26 @@ static inline void **s_top() {
   return (void **)__gc_stack_bottom - s.bf->global_area_size;
 }
 
+static inline void **s_peek_unsafe() {
+  return (void **)(__gc_stack_top + sizeof(void *));
+}
+
+static inline void **s_peek() {
+  void **peek = s_peek_unsafe();
+#ifndef WITH_CHECK
+  if (peek == s_top()) {
+    s_failure(&s, "peek: empty stack");
+  }
+  if (s.fp != NULL && peek == f_locals(s.fp)) {
+    s_failure(&s, "peek: empty function stack");
+  }
+#endif
+  return peek;
+}
+
 static inline bool s_is_empty() {
-  if ((void **)__gc_stack_top == s_top() ||
-      (s.fp != NULL && (void **)__gc_stack_top == f_locals(s.fp))) {
+  if (s_peek_unsafe() == s_top() ||
+      (s.fp != NULL && s_peek_unsafe() == f_locals(s.fp))) {
     return true;
   }
   return false;
@@ -26,41 +43,29 @@ static inline bool s_is_empty() {
 
 static inline void **s_nth(size_t n) {
 #ifndef WITH_CHECK
-  if ((void **)__gc_stack_top + n >= s_top()) {
+  if (s_peek_unsafe() + n >= s_top()) {
     s_failure(&s, "not enough elements in stack");
   }
-  if (s.fp != NULL && (void **)__gc_stack_top + n >= f_locals(s.fp)) {
+  if (s.fp != NULL && s_peek_unsafe() + n >= f_locals(s.fp)) {
     s_failure(&s, "not enough elements in function stack");
   }
 #endif
 
-  return (void **)__gc_stack_top + n;
+  return s_peek_unsafe() + n;
 }
 
 static inline aint *s_nth_i(size_t n) { return (aint *)s_nth(n); }
-
-static inline void **s_peek() {
-#ifndef WITH_CHECK
-  if ((void **)__gc_stack_top == s_top()) {
-    s_failure(&s, "peek: empty stack");
-  }
-  if (s.fp != NULL && (void **)__gc_stack_top == f_locals(s.fp)) {
-    s_failure(&s, "peek: empty function stack");
-  }
-#endif
-  return (void **)__gc_stack_top;
-}
 
 static inline aint *s_peek_i() { return (aint *)s_peek(); }
 
 static inline void s_push(void *val) {
 #ifndef WITH_CHECK
-  if ((void **)__gc_stack_top == s.stack) {
+  if (s_peek_unsafe() == s.stack) {
     s_failure(&s, "stack overflow");
   }
 #endif
-  __gc_stack_top -= sizeof(void *);
   *(void **)__gc_stack_top = val;
+  __gc_stack_top -= sizeof(void *);
 }
 
 static inline void s_push_i(aint val) { s_push((void *)val); }
@@ -69,27 +74,27 @@ static inline void s_push_nil() { s_push(NULL); }
 
 static inline void s_pushn_nil(size_t n) {
 #ifndef WITH_CHECK
-  if ((void **)__gc_stack_top + (aint)n - 1 <= s.stack) {
+  if (s_peek_unsafe() + (aint)n - 1 <= s.stack) {
     s_failure(&s, "pushn: stack overflow");
   }
 #endif
   for (size_t i = 0; i < n; ++i) {
-    __gc_stack_top -= sizeof(void *);
     *(void **)__gc_stack_top = NULL;
+    __gc_stack_top -= sizeof(void *);
   }
 }
 
 static inline void *s_pop() {
 #ifndef WITH_CHECK
-  if ((void **)__gc_stack_top == s_top()) {
+  if (s_peek_unsafe() == s_top()) {
     s_failure(&s, "pop: empty stack");
   }
   if (s.fp != NULL && (void **)__gc_stack_top == f_locals(s.fp)) {
     s_failure(&s, "pop: empty function stack");
   }
 #endif
-  void *value = *(void **)__gc_stack_top;
   __gc_stack_top += sizeof(void *);
+  void *value = *(void **)__gc_stack_top;
   return value;
 }
 
@@ -97,10 +102,10 @@ static inline aint s_pop_i() { return (aint)s_pop(); }
 
 static inline void s_popn(size_t n) {
 #ifndef WITH_CHECK
-  if ((void **)__gc_stack_top + (aint)n - 1 >= s_top()) {
+  if (s_peek_unsafe() + (aint)n - 1 >= s_top()) {
     s_failure(&s, "popn: empty stack");
   }
-  if (s.fp != NULL && (void **)__gc_stack_top + (aint)n - 1 >= f_locals(s.fp)) {
+  if (s.fp != NULL && s_peek_unsafe() + (aint)n - 1 >= f_locals(s.fp)) {
     s_failure(&s, "popn: empty function stack");
   }
 #endif
@@ -122,35 +127,35 @@ static inline void s_swap_tops() {
 static inline void s_put_nth(size_t n, void *val) {
   s_push_nil();
 #ifndef WITH_CHECK
-  if ((void **)__gc_stack_top + n >= s_top()) {
+  if (s_peek_unsafe() + n >= s_top()) {
     s_failure(&s, "not enough elements in stack");
   }
-  if (s.fp != NULL && (void **)__gc_stack_top + n >= f_locals(s.fp)) {
+  if (s.fp != NULL && s_peek_unsafe() + n >= f_locals(s.fp)) {
     s_failure(&s, "not enough elements in function stack");
   }
 #endif
 
   for (size_t i = 0; i < n; ++i) {
-    ((void **)__gc_stack_top)[i] = ((void **)__gc_stack_top)[i + 1];
+    s_peek_unsafe()[i] = s_peek_unsafe()[i + 1];
   }
-  ((void **)__gc_stack_top)[n] = val;
+  s_peek_unsafe()[n] = val;
 }
 
 static inline void s_rotate_n(size_t n) {
 #ifndef WITH_CHECK
-  if ((void **)__gc_stack_top + (aint)n - 1 >= s_top()) {
+  if (s_peek_unsafe() + (aint)n - 1 >= s_top()) {
     s_failure(&s, "not enough elements in stack");
   }
-  if (s.fp != NULL && (void **)__gc_stack_top + (aint)n - 1 >= f_locals(s.fp)) {
+  if (s.fp != NULL && s_peek_unsafe() + (aint)n - 1 >= f_locals(s.fp)) {
     s_failure(&s, "not enough elements in function stack");
   }
 #endif
 
   void *buf = NULL;
   for (size_t i = 0; 2 * i + 1 < n; ++i) {
-    buf = ((void **)__gc_stack_top)[n - i - 1];
-    ((void **)__gc_stack_top)[n - i - 1] = ((void **)__gc_stack_top)[i];
-    ((void **)__gc_stack_top)[i] = buf;
+    buf = s_peek_unsafe()[n - i - 1];
+    s_peek_unsafe()[n - i - 1] = s_peek_unsafe()[i];
+    s_peek_unsafe()[i] = buf;
   }
 }
 
@@ -165,12 +170,11 @@ static inline void s_rotate_n(size_t n) {
 static inline void s_enter_f(char *rp, bool is_closure_call, auint args_sz,
                              auint locals_sz) {
   // check that params count is valid
-  if ((void **)__gc_stack_top + (aint)args_sz - (is_closure_call ? 0 : 1) >=
-      s_top()) {
+  if (s_peek_unsafe() + (aint)args_sz - (is_closure_call ? 0 : 1) >= s_top()) {
     s_failure(&s, "not enough parameters in stack");
   }
   if (s.fp != NULL &&
-      (void **)__gc_stack_top + (aint)args_sz - (is_closure_call ? 0 : 1) >=
+      s_peek_unsafe() + (aint)args_sz - (is_closure_call ? 0 : 1) >=
           f_locals(s.fp)) {
     s_failure(&s, "not enough parameters in function stack");
   }
@@ -193,7 +197,7 @@ static inline void s_enter_f(char *rp, bool is_closure_call, auint args_sz,
   };
 
   // put frame on stack
-  s.fp = (struct Frame *)__gc_stack_top;
+  s.fp = (struct Frame *)s_peek_unsafe();
   (*s.fp) = frame;
 
   s_pushn_nil(locals_sz);
@@ -209,7 +213,7 @@ static inline void s_exit_f() {
   struct Frame frame = *s.fp;
 
   // drop stack entities, locals, frame
-  size_t to_pop = f_args(s.fp) - (void **)__gc_stack_top;
+  size_t to_pop = f_args(s.fp) - s_peek_unsafe();
   s.fp = (struct Frame *)f_prev_fp(&frame);
   s_popn(to_pop);
 
@@ -229,11 +233,11 @@ static inline void s_exit_f() {
 }
 
 static inline void print_stack(struct State *state) {
-  printf("stack (%li) is\n[",
-         state->stack + STACK_SIZE - (void **)__gc_stack_top);
-  for (void **x = state->stack + STACK_SIZE - 1; x >= (void **)__gc_stack_top;
-       --x) {
-    printf("%li ", (long)UNBOX(*x));
+  void **peek = s_peek_unsafe();
+  printf("stack (%li) is\n[", state->stack + STACK_SIZE - peek);
+  for (void **x = state->stack + STACK_SIZE - 1; x > peek; --x) {
+    printf("(%li, ", (long)UNBOX(*x));
+    printf("%p) ", *x);
   }
   printf("]\n");
 }
