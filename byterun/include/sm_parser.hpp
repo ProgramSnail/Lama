@@ -5,6 +5,14 @@
 #include <variant>
 #include <vector>
 
+namespace utils {
+// https://en.cppreference.com/w/cpp/utility/variant/visit2
+template <class... Ts> struct multifunc : Ts... {
+  using Ts::operator()...;
+};
+template <class... Ts> multifunc(Ts...) -> multifunc<Ts...>;
+} // namespace utils
+
 enum class Patt {
   BOXED,
   UNBOXED,

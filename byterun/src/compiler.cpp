@@ -16,12 +16,6 @@
 
 namespace utils {
 
-// https://en.cppreference.com/w/cpp/utility/variant/visit2
-template <class... Ts> struct multifunc : Ts... {
-  using Ts::operator()...;
-};
-template <class... Ts> multifunc(Ts...) -> multifunc<Ts...>;
-
 // https://en.cppreference.com/w/cpp/utility/unreachable
 [[noreturn]] inline void unreachable() {
   // Uses compiler specific extensions if possible.
