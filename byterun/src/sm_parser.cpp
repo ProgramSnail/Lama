@@ -201,7 +201,7 @@ ParsingResult parse_var(std::string_view s) {
 }
 
 // (_, _)
-ParsingResult parse_pair(std::string_view s) { // TODO
+ParsingResult parse_pair(std::string_view s) {
   if (s.size() < 2 || s.front() != '(') {
     return {};
   }
@@ -215,13 +215,13 @@ ParsingResult parse_pair(std::string_view s) { // TODO
 }
 
 // [_, ..., _]
-ParsingResult parse_array(std::string_view s) { // TODO
-  if (s.size() < 2 || s.front() != '[') {
+ParsingResult parse_array(std::string_view s, char first_symbol = '[') {
+  if (s.size() < 2 || s.front() != first_symbol) {
     return {};
   }
 
   std::vector<std::any> values;
-  ParsingResult res{{}, s.substr(1)}; // skip '['
+  ParsingResult res{{}, s.substr(1)}; // skip '[' (first_symbol)
 
   while (not s.empty()) {
     res = parse_any_val(res.rest);
@@ -521,51 +521,25 @@ std::optional<SMInstr> parse_sm(const std::string &line) {
     return instr.build();
   }
 
-  // NOTE: do not check for valid input
-  // if (auto space = std::string{substr_to(line, pos, '(')}; space != " ") {
-  //   return std::nullopt;
-  // }
+  // (_, ..., _) - args
+  ParsingResult args_res = parse_array({line.data(), line.data() + pos});
 
-  // TODO: Automatically parse any structures with parser combinators
-  // if (cmd == "BEGIN") {
-  //   // TODO: BEGIN
-  // } else {
+  try {
+    auto args = std::any_cast<std::vector<std::any>>(std::move(args_res.value));
+    args_res.value = {};
 
-  //   bool was_last_arg = false;
-  //   while (!was_last_arg) {
-  //     std::string arg = substr_to(line, pos, '(');
-  //     ++pos;
+    if (not args_res.rest.empty()) {
+      return std::nullopt;
+    }
 
-  //     if (arg.empty()) {
-  //       arg = line.substr(pos);
-  //       arg.pop_back(); // ')'
-  //       was_last_arg = true;
-  //     }
-
-  //     if (arg.front() == '"') {
-  //       instr.push_arg(arg.substr(1, arg.size() - 2));
-  //     } else if (arg.front() == '[') {
-  //       // TODO: parse array
-  //       instr.push_arg(arg.substr(1, arg.size() - 2));
-  //     } else if (arg == "true") {
-  //       instr.push_arg(true);
-  //     } else if (arg == "false") {
-  //       instr.push_arg(false);
-  //     } else if (auto maybe_var = parse_var(arg); maybe_var) {
-  //       instr.push_arg(*maybe_var);
-  //     } else if () { // TODO: CLUSURE vector
-  //     } else if (auto maybe_patt = parse_patt(arg); maybe_patt) {
-  //       instr.push_arg(*maybe_patt);
-  //     } else if (int n = 0; std::from_chars(line.data() + pos,
-  //                                           line.data() + pos +
-  //                                           line.size(), n)
-  //                               .ec == std::errc{}) {
-  //       instr.push_arg(n);
-  //     } else {
-  //       return std::nullopt;
-  //     }
-  //   }
-  // }
+    // TODO: put all array at once
+    for (auto &&arg : args) {
+      instr.push_arg(arg);
+    }
+    args = {};
+  } catch (const std::bad_any_cast &) {
+    return std::nullopt;
+  }
 
   return instr.build();
 }
