@@ -543,3 +543,112 @@ std::optional<SMInstr> parse_sm(const std::string &line) {
 
   return instr.build();
 }
+
+// TODO: TMP: not efficient, for test purposes only
+// TODO: number of printed information reduced for now
+std::string print_sm(const SMInstr &instr) {
+  return {std::visit<std::string>( //
+      utils::multifunc{
+          //
+          [](const SMInstr::PUBLIC &x) -> std::string {
+            return "PUBLIC [" + x.name + "]";
+          },
+          [](const SMInstr::EXTERN &x) -> std::string {
+            return "EXTERN [" + x.name + "]";
+          },
+          [](const SMInstr::IMPORT &x) -> std::string {
+            return "IMPORT [" + x.name + "]";
+          },
+          [](const SMInstr::CLOSURE &x) -> std::string {
+            return "CLOSURE [" + x.name +
+                   ". args_count=" + std::to_string(x.closure.size()) + "]";
+          },
+          [](const SMInstr::CONST &x) -> std::string {
+            return "CONST [" + std::to_string(x.n) + "]";
+          },
+          [](const SMInstr::STRING &x) -> std::string {
+            return "STRING [" + x.str + "]";
+          },
+          [](const SMInstr::LDA &) -> std::string {
+            // x.v
+            return "LDA";
+          },
+          [](const SMInstr::LD &) -> std::string {
+            // x.v
+            return "LD";
+          },
+          [](const SMInstr::ST &) -> std::string {
+            // x.v
+            return "ST";
+          },
+          [](const SMInstr::STA &) -> std::string { return "STA"; },
+          [](const SMInstr::STI &) -> std::string { return "STI"; },
+          [](const SMInstr::BINOP &) -> std::string {
+            // x.opr
+            return "BINOP";
+          },
+          [](const SMInstr::LABEL &x) -> std::string {
+            return "LABEL [" + x.s + "]";
+          },
+          [](const SMInstr::FLABEL &x) -> std::string {
+            return "FLABEL [" + x.s + "]";
+          },
+          [](const SMInstr::SLABEL &x) -> std::string {
+            return "SLABEL [" + x.s + "]";
+          },
+          [](const SMInstr::JMP &x) -> std::string {
+            return "JMP [" + x.l + "]";
+          },
+          [](const SMInstr::CJMP &x) -> std::string {
+            return "CJMP [" + x.s + ". " + x.l + "]";
+          },
+          [](const SMInstr::BEGIN &) -> std::string {
+            // x.f
+            // x.nargs
+            // x.nlocals
+            // x.closure
+            // x.args
+            // x.scopes
+            return "BEGIN";
+          },
+          [](const SMInstr::END &) -> std::string { return "END"; },
+          [](const SMInstr::RET &) -> std::string { return "RET"; },
+          [](const SMInstr::ELEM &) -> std::string { return "ELEM"; },
+          [](const SMInstr::CALL &x) -> std::string {
+            // x.tail
+            return "CALL [" + x.fname + ". " + std::to_string(x.n) + "]";
+          },
+          [](const SMInstr::CALLC &x) -> std::string {
+            // x.tail
+            return "CALLC [" + std::to_string(x.n) + "]";
+          },
+          [](const SMInstr::SEXP &x) -> std::string {
+            return "SEXP [" + x.tag + ". " + std::to_string(x.n) + "]";
+          },
+          [](const SMInstr::DROP &) -> std::string { return "DROP"; },
+          [](const SMInstr::DUP &) -> std::string { return "DUP"; },
+          [](const SMInstr::SWAP &) -> std::string { return "SWAP"; },
+          [](const SMInstr::TAG &x) -> std::string {
+            return "TAG [" + x.tag + ". " + std::to_string(x.n) + "]";
+          },
+          [](const SMInstr::ARRAY &x) -> std::string {
+            return "ARRAY [" + std::to_string(x.n) + "]";
+          },
+          [](const SMInstr::PATT &) -> std::string {
+            // x.patt
+            return "PATT";
+          },
+          [](const SMInstr::LINE &x) -> std::string {
+            return "LINE [" + std::to_string(x.n) + "]";
+          },
+          [](const SMInstr::FAIL &x) -> std::string {
+            return "FAIL [" + std::to_string(x.line) + ". " +
+                   std::to_string(x.col) + ". " + std::to_string(x.val) + ". " +
+                   "]";
+          },
+          // [](auto) -> std::string {
+          //   throw std::bad_any_cast{}; // create another error ?
+          // },
+      },
+      *instr)};
+}

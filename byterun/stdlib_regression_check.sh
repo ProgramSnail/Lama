@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 # TODO: FIXME: error on test 3, possible UB or standard change
-xmake build
-cp "build/linux/x86_64/release/byterun" byterun.exe
+# xmake build
+# cp "build/linux/x86_64/release/byterun" byterun.exe
 
 dune build > /dev/null
 
@@ -25,7 +25,7 @@ for mod in ../stdlib/*.lama; do
 done
 
 echo "Run tests:"
-for test in ../stdlib/regression/*03.lama; do
+for test in ../stdlib/regression/*.lama; do
   echo $test
   $compiler -b  $test -I ../stdlib/ > /dev/null
   test_path="${test%.*}"

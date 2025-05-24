@@ -1,7 +1,9 @@
+#include <fstream>
 #include <iostream>
 
 #include "analyzer.hpp"
 #include "parser.hpp"
+#include "sm_parser.hpp"
 
 extern "C" {
 #include "../../runtime/runtime.h"
@@ -22,6 +24,13 @@ int main(int argc, char **argv) {
   bool do_print = false;
   if (strcmp(argv[1], "-i") == 0) {
     do_interpretation = true;
+  } else if (strcmp(argv[1], "-sm") == 0) { // TODO: TMP, FOR CHECKS
+    std::ifstream file(argv[2]);
+    auto instrs = parse_sm(file);
+    std::cout << "instructions form file\n";
+    for (auto &instr : instrs) {
+      std::cout << print_sm(instr) << "\n";
+    }
   }
 #ifdef WITH_CHECK
   else if (strcmp(argv[1], "-vi") == 0) {
