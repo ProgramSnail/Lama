@@ -239,4 +239,4 @@ struct SMInstr {
 
 std::vector<SMInstr> parse_sm(std::istream &in);
 
-std::optional<SMInstr> parse_sm(std::string &line);
+std::optional<SMInstr> parse_sm(const std::string &line);

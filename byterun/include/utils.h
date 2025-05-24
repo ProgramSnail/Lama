@@ -9,19 +9,19 @@
 
 /* The unpacked representation of bytecode file */
 typedef struct {
-  uint main_offset;  /* offset of the function 'main'                        */
-  char *string_ptr;  /* A pointer to the beginning of the string table */
-  int *imports_ptr;  /* A pointer to the beginning of imports table    */
-  int *public_ptr;   /* A pointer to the beginning of publics table    */
-  char *code_ptr;    /* A pointer to the bytecode itself               */
-  void **global_ptr; /* A pointer to the global area                   */
-  char *substs_ptr;  /* A pointer to the substs area                   */
-  int code_size;     /* The size (in bytes) of code                    */
-  uint stringtab_size;   /* The size (in bytes) of the string table        */
-  uint global_area_size; /* The size (in words) of global area             */
-  uint substs_area_size; /* number of required address substitutions          */
-  uint imports_number;   /* The number of imports                          */
-  uint public_symbols_number; /* The number of public symbols              */
+  uint32_t main_offset;    /* offset of the function 'main'    */
+  char *string_ptr;        /* A pointer to the beginning of the string table */
+  int32_t *imports_ptr;    /* A pointer to the beginning of imports table    */
+  int32_t *public_ptr;     /* A pointer to the beginning of publics table    */
+  char *code_ptr;          /* A pointer to the bytecode itself               */
+  void **global_ptr;       /* A pointer to the global area                   */
+  char *substs_ptr;        /* A pointer to the substs area                   */
+  int32_t code_size;       /* The size (in bytes) of code                    */
+  uint32_t stringtab_size; /* The size (in bytes) of the string table        */
+  uint32_t global_area_size; /* The size (in words) of global area */
+  uint32_t substs_area_size; /* number of required address substitutions */
+  uint32_t imports_number; /* The number of imports                          */
+  uint32_t public_symbols_number; /* The number of public symbols */
   char buffer[0];
 } Bytefile;
 

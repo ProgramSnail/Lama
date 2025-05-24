@@ -96,7 +96,7 @@ static inline void call_Barray(size_t elem_count) {
     s_push(array);
 }
 
-void call_builtin(uint builtin_id, uint args_count) {
+void call_builtin(uint32_t builtin_id, uint32_t args_count) {
 #ifndef WITH_CHECK
     if (builtin_id >= BUILTIN_NONE) {
       s_failure(&s, "invalid builtin");
@@ -211,7 +211,7 @@ void run_main(Bytefile* bf, int argc, char **argv) {
       }
 
       case CMD_BASIC_JMP: { // JMP 0x%.8x
-        uint jmp_p = ip_read_int(&s.ip);
+        uint32_t jmp_p = ip_read_int(&s.ip);
 
 #ifndef WITH_CHECK
         if (jmp_p >= s.bf->code_size) {
@@ -284,7 +284,7 @@ void run_main(Bytefile* bf, int argc, char **argv) {
     case CMD_CTRL:
       switch (l) {
       case CMD_CTRL_CJMPz: { // CJMPz 0x%.8x
-        uint jmp_p = ip_read_int(&s.ip);
+        uint32_t jmp_p = ip_read_int(&s.ip);
 
 #ifndef WITH_CHECK
         if (jmp_p >= s.bf->code_size) {
@@ -298,7 +298,7 @@ void run_main(Bytefile* bf, int argc, char **argv) {
       }
 
       case CMD_CTRL_CJMPnz: { // CJMPnz  0x%.8x
-        uint jmp_p = ip_read_int(&s.ip);
+        uint32_t jmp_p = ip_read_int(&s.ip);
 
 #ifndef WITH_CHECK
         if (jmp_p >= s.bf->code_size) {
@@ -312,12 +312,12 @@ void run_main(Bytefile* bf, int argc, char **argv) {
       }
 
       case CMD_CTRL_BEGIN: { // BEGIN %d %d // function begin
-        uint args_sz = ip_read_int(&s.ip);
+        uint32_t args_sz = ip_read_int(&s.ip);
 // #ifdef WITH_CHECK
-        uint locals_sz = ip_read_half_int(&s.ip);
-        uint max_additional_stack_sz = ip_read_half_int(&s.ip);
+        uint32_t locals_sz = ip_read_half_int(&s.ip);
+        uint32_t max_additional_stack_sz = ip_read_half_int(&s.ip);
 // #else
-//         uint locals_sz = ip_read_int(&s.ip);
+//         uint32_t locals_sz = ip_read_int(&s.ip);
 // #endif
 #ifndef WITH_CHECK
         if (s.fp != NULL && s.call_ip == NULL) {
@@ -336,12 +336,12 @@ void run_main(Bytefile* bf, int argc, char **argv) {
 
       case CMD_CTRL_CBEGIN: { // CBEGIN %d %d
         // NOTE: example not found, no checks done
-        uint args_sz = ip_read_int(&s.ip);
+        uint32_t args_sz = ip_read_int(&s.ip);
 // #ifdef WITH_CHECK
-        uint locals_sz = ip_read_half_int(&s.ip);
-        uint max_additional_stack_sz = ip_read_half_int(&s.ip);
+        uint32_t locals_sz = ip_read_half_int(&s.ip);
+        uint32_t max_additional_stack_sz = ip_read_half_int(&s.ip);
 // #else
-        // uint locals_sz = ip_read_int(&s.ip);
+        // uint32_t locals_sz = ip_read_int(&s.ip);
 // #endif
 #ifndef WITH_CHECK
         if (s.fp != NULL && s.call_ip == NULL) {
@@ -403,7 +403,7 @@ void run_main(Bytefile* bf, int argc, char **argv) {
       }
 
       case CMD_CTRL_CALL: { // CALL 0x%.8x %d // call function
-        uint call_p = ip_read_int(&s.ip);
+        uint32_t call_p = ip_read_int(&s.ip);
         ip_read_int(&s.ip); // args count
 
         call_happened = true;

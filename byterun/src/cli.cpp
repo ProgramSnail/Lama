@@ -34,7 +34,11 @@ int main(int argc, char **argv) {
   else if (strcmp(argv[1], "-p") == 0) {
     do_print = true;
   } else {
+#ifdef WITH_CHECK
+    failure("wrong execution option (acceptable options - '-i')");
+#else
     failure("wrong execution option (acceptable options - '-i', '-v', '-vi')");
+#endif
   }
 
   if (argc < 3) {

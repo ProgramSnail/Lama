@@ -19,9 +19,9 @@ void analyze(Bytefile *bf, std::vector<size_t> &&add_publics) {
   uint16_t mock_builtin_begin_counter = 0;
 
   int current_stack_depth = 0;
-  const uint globals_count = bf->global_area_size;
-  uint current_locals_count = 0;
-  uint current_args_count = 0;
+  const uint32_t globals_count = bf->global_area_size;
+  uint32_t current_locals_count = 0;
+  uint32_t current_args_count = 0;
   bool is_in_closure = false;
   uint16_t *current_begin_counter = nullptr;
   int func_end_found = 0;
@@ -55,7 +55,7 @@ void analyze(Bytefile *bf, std::vector<size_t> &&add_publics) {
 
   auto const check_correct_var = [&saved_current_ip, bf, &globals_count,
                                   &current_locals_count, &current_args_count,
-                                  &is_in_closure](uint8_t l, uint id) {
+                                  &is_in_closure](uint8_t l, uint32_t id) {
     if (l > 3) {
       ip_failure(saved_current_ip, bf, "unexpected variable category");
     }
@@ -264,7 +264,7 @@ void analyze(Bytefile *bf, std::vector<size_t> &&add_publics) {
       is_in_closure = (cmd == Cmd::CBEGIN);
       break;
     case Cmd::CLOSURE: {
-      /*uint closure_offset = */ ip_read_int_unsafe(
+      /*uint32_t closure_offset = */ ip_read_int_unsafe(
           &current_ip);                                    // closure offset
       size_t args_count = ip_read_int_unsafe(&current_ip); // args count
       extra_stack_during_opr = args_count;
@@ -286,7 +286,7 @@ void analyze(Bytefile *bf, std::vector<size_t> &&add_publics) {
       // }
     } break;
     case Cmd::CALLC: {
-      uint args_count = ip_read_int_unsafe(&current_ip);
+      uint32_t args_count = ip_read_int_unsafe(&current_ip);
       current_stack_depth -= args_count + 1; // + closure itself
       if (current_stack_depth < 0) {
         ip_failure(saved_current_ip, bf, "not enough elements in stack");
@@ -295,8 +295,8 @@ void analyze(Bytefile *bf, std::vector<size_t> &&add_publics) {
       // NOTE: can't check args == cbegin args
     } break;
     case Cmd::CALL: {
-      uint call_offset = ip_read_int_unsafe(&current_ip); // call offset
-      uint args_count = ip_read_int_unsafe(&current_ip);
+      uint32_t call_offset = ip_read_int_unsafe(&current_ip); // call offset
+      uint32_t args_count = ip_read_int_unsafe(&current_ip);
       current_stack_depth -= args_count;
       if (current_stack_depth < 0) {
         ip_failure(saved_current_ip, bf, "not enough elements in stack");
@@ -309,11 +309,11 @@ void analyze(Bytefile *bf, std::vector<size_t> &&add_publics) {
 
       if (is_command_name(bf->code_ptr + call_offset, bf, Cmd::BUILTIN)) {
         if (args_count !=
-            *(uint *)(bf->code_ptr + call_offset + 1 + sizeof(uint32_t))) {
+            *(uint32_t *)(bf->code_ptr + call_offset + 1 + sizeof(uint32_t))) {
           ip_failure(saved_current_ip, bf, "wrong builtin call argument count");
         }
       } else if (is_command_name(bf->code_ptr + call_offset, bf, Cmd::BEGIN)) {
-        if (args_count != *(uint *)(bf->code_ptr + call_offset + 1)) {
+        if (args_count != *(uint32_t *)(bf->code_ptr + call_offset + 1)) {
           ip_failure(saved_current_ip, bf, "wrong call argument count");
         }
       } else {
@@ -352,7 +352,7 @@ void analyze(Bytefile *bf, std::vector<size_t> &&add_publics) {
       // add end to behave like end
       ++func_end_found;
 
-      /*uint args_count = */ ip_read_int_unsafe(&current_ip);
+      /*uint32_t args_count = */ ip_read_int_unsafe(&current_ip);
 
       // NOTE: args checks done in corresponding CALL/CALLC
     } break;

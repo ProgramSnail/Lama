@@ -11,7 +11,7 @@ Bytefile *run_with_imports(Bytefile *root, int argc, char **argv,
 
 // ---
 
-enum BUILTIN : uint {
+enum BUILTIN : uint32_t {
   BUILTIN_Luppercase,      // 0
   BUILTIN_Llowercase,      // 1
   BUILTIN_Lassert,         // 2
