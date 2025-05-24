@@ -1,5 +1,6 @@
 #include "sm_parser.hpp"
 
+#include <algorithm>
 #include <any>
 #include <charconv>
 #include <functional>
@@ -32,15 +33,23 @@ std::vector<SMInstr> parse_sm(std::istream &in) {
 
 //
 
-struct EmptyArrayTok {};
+// throws std::bad_any_cast
+template <typename T> std::vector<T> any_array_cast(std::any v) {
+  auto values = std::any_cast<std::vector<std::any>>(std::move(v));
 
-template <typename T> std::vector<T> any_array_cast(const std::any &v) {
-  if (v.type().name() == typeid(EmptyArrayTok).name()) {
-    return {};
-  }
+  std::vector<T> res;
 
-  return std::any_cast<std::vector<T>>(v);
+  std::ranges::transform(
+      values, std::back_inserter(res),
+      [](const auto &value) { return std::any_cast<T>(value); });
+
+  return res;
 }
+
+struct ParsingResult {
+  std::any value;
+  std::string_view rest;
+};
 
 //
 
@@ -57,37 +66,65 @@ std::string_view substr_to(const std::string_view line, size_t &pos, char to) {
   return result;
 }
 
-// TODO: parsers + combinators
+// ---
 
-std::any parse_any_val(std::string_view s);
+template <typename T> using Matches = std::vector<std::pair<std::string, T>>;
 
-std::any parse_str(std::string_view s) {
+// NOTE: prefix matching can be done better (but probably such performance is
+// not required here)
+template <typename T>
+ParsingResult prefix_matcher_auto(std::string_view s,
+                                  const Matches<T> &values) {
+  for (auto &value : values) {
+    if (s.substr(0, value.first.size()) == value.first) {
+      return {value.second, s.substr(value.first.size())};
+    }
+  }
+
+  return {{}, s};
+}
+
+ParsingResult parse_any_val_auto(std::string_view s);
+
+ParsingResult parse_str_auto(std::string_view s) {
   if (s.size() < 2 || s.front() != '"') {
-    return {};
-  }
-  return s.substr(1, s.size() - 2);
-}
-
-std::any parse_int(std::string_view s) {
-  int n = 0;
-  if (std::from_chars(s.data(), s.data() + s.size(), n).ec != std::errc{}) {
-    return {};
+    return {{}, s};
   }
 
-  return n;
-}
-std::any parse_bool(std::string_view s) {
-  if (s == "true") {
-    return true;
-  } else if (s == "false") {
-    return false;
+  size_t end = 1; // skip front
+  for (; end < s.size(); ++end) {
+    if (s[end] == '\\') {
+      ++end;
+      continue;
+    }
+
+    if (s[end] == '\"') {
+      break;
+    }
   }
 
-  return {};
+  return {std::string{s.substr(1, end - 1)}, s.substr(end + 1)};
 }
 
-std::any parse_opr(std::string_view s) {
-  static const std::map<std::string, Opr, std::less<>> oprs = {
+ParsingResult parse_int_auto(std::string_view s) {
+  int value = 0;
+
+  auto res = std::from_chars(s.data(), s.data() + s.size(), value);
+
+  if (res.ec == std::errc{}) {
+    return {{}, s};
+  }
+
+  return {value, s.substr(res.ptr - s.data())};
+}
+
+ParsingResult parse_bool_auto(std::string_view s) {
+  static const Matches<bool> bools = {{"true", true}, {"false", false}};
+  return prefix_matcher_auto(s, bools);
+}
+
+ParsingResult parse_opr_auto(std::string_view s) {
+  static const Matches<Opr> oprs = {
       {"+", Opr::ADD},  // +
       {"-", Opr::SUB},  // -
       {"*", Opr::MULT}, // *
@@ -102,34 +139,22 @@ std::any parse_opr(std::string_view s) {
       {"&&", Opr::AND}, // &&
       {"!!", Opr::OR},  // !!
   }; // TODO: check format: cpp vs lama
-
-  auto it = oprs.find(s);
-
-  if (it != oprs.end()) {
-    return it->second;
-  }
-
-  return {};
+  return prefix_matcher_auto(s, oprs);
 }
 
-std::any parse_patt(std::string_view s) {
-  static const std::map<std::string, Patt, std::less<>> patts = {
+ParsingResult parse_patt_auto(std::string_view s) {
+  static const Matches<Patt> patts = {
       {"Boxed", Patt::BOXED},   {"UnBoxed", Patt::UNBOXED},
       {"Array", Patt::ARRAY},   {"String", Patt::STRING},
       {"SExp", Patt::SEXP},     {"Closure", Patt::CLOSURE},
       {"StrCmp", Patt::STRCMP},
   }; // TODO: check
-
-  auto it = patts.find(s);
-
-  if (it != patts.end()) {
-    return it->second;
-  }
-
-  return {};
+  return prefix_matcher_auto(s, patts);
 }
 
-std::any parse_var(std::string_view s) {
+// ---
+
+ParsingResult parse_var_auto(std::string_view s) {
   static const std::map<std::string, std::function<ValT(std::any &&)>,
                         std::less<>>
       vars = {
@@ -157,133 +182,143 @@ std::any parse_var(std::string_view s) {
 
   size_t pos = 0;
   auto arg_str = std::string{substr_to(s, pos, ' ')};
-  if (arg_str.empty()) {
-    return {};
+  auto arg_it = vars.find(arg_str);
+  if (arg_it == vars.end()) {
+    return {{}, s};
   }
   ++pos; // '('
 
-  if (s.size() <= pos + 1) {
-    return {};
-  }
-
-  auto id_str = s.substr(pos, s.size() - pos - 1);
-
-  auto arg_it = vars.find(arg_str);
-
-  std::any id = parse_any_val(id_str);
+  // NOTE: s_rest starts with ')'
+  auto [id, s_rest] = parse_any_val_auto(s.substr(pos));
   if (not id.has_value()) {
-    return {};
+    return {{}, s};
   }
 
-  if (arg_it != vars.end()) {
-    try {
-      return arg_it->second(std::move(id));
-    } catch (const std::bad_any_cast &) {
-      return {};
-    }
+  try {
+    return {arg_it->second(std::move(id)), s_rest.substr(1)}; // skip ')'
+  } catch (const std::bad_any_cast &) {
+    return {{}, s};
   }
-
-  return {};
 }
 
 // (_, _)
-std::any parse_pair(std::string_view s) { // TODO
+ParsingResult parse_pair_auto(std::string_view s) { // TODO
   if (s.size() < 2 || s.front() != '(') {
     return {};
   }
 
-  // TODO: duduce tokens ends in parsers to find next entity
+  ParsingResult first_elem = parse_any_val_auto(s.substr(1)); // skip '('
+  ParsingResult second_elem =
+      parse_any_val_auto(first_elem.rest.substr(2)); // skip ', '
+
+  return {std::pair<std::any, std::any>{first_elem, second_elem},
+          second_elem.rest.substr(1)}; // skip ')'
 }
 
 // [_, ..., _]
-std::any parse_array(std::string_view s) { // TODO
+ParsingResult parse_array_auto(std::string_view s) { // TODO
   if (s.size() < 2 || s.front() != '[') {
     return {};
   }
 
-  // TODO: deal with empty array
+  std::vector<std::any> values;
+  ParsingResult res{{}, s.substr(1)}; // skip '['
 
-  // TODO: duduce tokens ends in parsers to find next entity
+  while (not s.empty()) {
+    res = parse_any_val_auto(res.rest);
+
+    if (not res.value.has_value()) {
+      return {{}, s};
+    }
+
+    values.push_back(std::move(res.value));
+    res.value = {};                // do not use moved value
+    res.rest = res.rest.substr(1); // skip ',' (or ']' at the end)
+  }
+
+  return {values, res.rest};
 }
 
 // { blab="_"; elab="_" names=[...]; subs=[...]}
-std::any parse_scope(std::string_view s) {
+ParsingResult parse_scope_auto(std::string_view s) {
   if (s.size() < 2 || s.front() != '{') {
     return {};
   }
 
   Scope scope;
-
-  size_t pos = 0;
-  // NOTE: expect no ';' in labels and names
-
-  // blab
-  substr_to(s, pos, '=');
-  auto blab_str = std::string{substr_to(s, pos, ';')};
-  if (blab_str.empty()) {
-    return {};
-  }
-
-  // elab
-  substr_to(s, pos, '=');
-  auto elab_str = std::string{substr_to(s, pos, ';')};
-  if (elab_str.empty()) {
-    return {};
-  }
-
-  // names
-  substr_to(s, pos, '=');
-  auto names_str = std::string{substr_to(s, pos, ';')};
-  if (names_str.empty()) {
-    return {};
-  }
-
-  // subs
-  substr_to(s, pos, '=');
-  auto subs_str = std::string{s.substr(pos, s.size() - pos - 1)};
-  if (subs_str.empty()) {
-    return {};
-  }
+  ParsingResult res{{}, s.substr(1)}; // skip '{'
 
   try {
-    scope.blab = std::any_cast<std::string>(parse_str(blab_str));
-    scope.elab = std::any_cast<std::string>(parse_str(elab_str));
-    scope.names =
-        any_array_cast<std::pair<std::string, int>>(parse_array(names_str));
-    scope.subs = any_array_cast<Scope>(parse_array(subs_str));
+    { // blab
+      size_t pos = 0;
+      substr_to(res.rest, pos, '=');
+      res = parse_str_auto(res.rest.substr(pos));
+      scope.blab = std::any_cast<std::string>(res.value);
+    }
+
+    { // elab
+      size_t pos = 0;
+      substr_to(res.rest, pos, '=');
+      res = parse_str_auto(res.rest.substr(pos));
+      scope.elab = std::any_cast<std::string>(res.value);
+    }
+
+    { // names
+      size_t pos = 0;
+      substr_to(res.rest, pos, '=');
+      res = parse_array_auto(res.rest.substr(pos));
+
+      auto names =
+          any_array_cast<std::pair<std::any, std::any>>(std::move(res.value));
+      res.value = {}; // do not use moved value
+      std::ranges::transform(names, std::back_inserter(scope.names),
+                             [](const auto &name) {
+                               return std::pair<std::string, int>{
+                                   std::any_cast<std::string>(name.first),
+                                   std::any_cast<int>(name.second)};
+                             });
+    }
+
+    { // subs
+      size_t pos = 0;
+      substr_to(res.rest, pos, '=');
+      res = parse_array_auto(res.rest.substr(pos));
+      scope.subs = any_array_cast<Scope>(std::move(res.value));
+      res.value = {}; // do not use moved vlue
+    }
+
+    return {scope, res.rest.substr(1)}; // skip '}'
   } catch (const std::bad_any_cast &) {
-    return {};
+    return {{}, s};
   }
+}
 
-  return scope;
-} // TODO
+ParsingResult parse_any_val_auto(std::string_view s) {
+  ParsingResult res;
 
-std::any parse_any_val(std::string_view s) {
-  std::any val;
-
-  if (val = parse_str(s); val.has_value()) {
-    return val;
+  if (res = parse_str_auto(s); res.value.has_value()) {
+    return res;
   }
-  if (val = parse_int(s); val.has_value()) {
-    return val;
+  if (res = parse_int_auto(s); res.value.has_value()) {
+    return res;
   }
-  if (val = parse_bool(s); val.has_value()) {
-    return val;
+  if (res = parse_bool_auto(s); res.value.has_value()) {
+    return res;
   }
-  if (val = parse_opr(s); val.has_value()) {
-    return val;
+  if (res = parse_opr_auto(s); res.value.has_value()) {
+    return res;
   }
-  if (val = parse_patt(s); val.has_value()) {
-    return val;
+  if (res = parse_patt_auto(s); res.value.has_value()) {
+    return res;
   }
-  if (val = parse_var(s); val.has_value()) {
-    return val;
+  if (res = parse_var_auto(s); res.value.has_value()) {
+    return res;
   }
-  if (val = parse_array(s); val.has_value()) {
-    return val;
+  if (res = parse_array_auto(s); res.value.has_value()) {
+    return res;
   }
-  if (val = parse_scope(s); val.has_value()) {
-    return val;
+  if (res = parse_scope_auto(s); res.value.has_value()) {
+    return res;
   }
 
   return {};
