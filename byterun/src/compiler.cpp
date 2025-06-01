@@ -2,6 +2,7 @@
 
 #include "../../runtime/runtime.h"
 
+#include "compiler.hpp"
 #include "sm_parser.hpp"
 
 #include <format>
@@ -2114,4 +2115,16 @@ std::vector<Instr> compile(const Options &cmd, Env &env,
         utils::concat(std::move(result), compile(cmd, env, imports, instr));
   }
   return result;
+}
+
+std::vector<std::string> compile_to_code(const std::vector<SMInstr> &code) {
+  Options cmd{.topname = "byterun", .filename = "byterun"}; // TODO TMP
+  Env env(Mode{.is_debug = true, .target_os = OS::LINUX});
+
+  auto asm_code = compile(cmd, env, {/*imports (TODO TMP)*/}, code);
+  std::vector<std::string> res;
+  std::transform(asm_code.begin(), asm_code.end(), std::back_inserter(res),
+                 [&env](const auto &instr) { return to_code(env, instr); });
+
+  return res;
 }

@@ -2,6 +2,7 @@
 #include <iostream>
 
 #include "analyzer.hpp"
+#include "compiler.hpp"
 #include "parser.hpp"
 #include "sm_parser.hpp"
 
@@ -24,13 +25,20 @@ int main(int argc, char **argv) {
   bool do_print = false;
   if (strcmp(argv[1], "-i") == 0) {
     do_interpretation = true;
-  } else if (strcmp(argv[1], "-sm") == 0) { // TODO: TMP, FOR CHECKS
+  } else if (strcmp(argv[1], "-ds") == 0) { // TODO: TMP, FOR CHECKS
     std::ifstream file(argv[2]);
     std::cout << "-- parse\n";
     auto instrs = parse_sm(file);
     std::cout << "-- print\n";
     for (auto &instr : instrs) {
       std::cout << print_sm(instr) << "\n";
+    }
+    return 0;
+  } else if (strcmp(argv[1], "-s") == 0) {
+    std::ifstream file(argv[2]);
+    auto instrs = compile_to_code(parse_sm(file));
+    for (auto &instr : instrs) {
+      std::cout << instr << "\n";
     }
     return 0;
   }
