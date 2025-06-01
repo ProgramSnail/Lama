@@ -11,6 +11,23 @@ template <class... Ts> struct multifunc : Ts... {
   using Ts::operator()...;
 };
 template <class... Ts> multifunc(Ts...) -> multifunc<Ts...>;
+
+template <typename T, typename E = std::string> struct Result {
+  struct Error {
+    E v;
+  };
+
+  bool failed() { return value.index() != 0; }
+
+  static Result failure(E &&err) { return Result{.value = Error{err}}; }
+  static Result success(T &&value) { return Result{.value = value}; }
+
+  const T &get_value() { return std::get<0>(value); }
+  const E &get_error() { return std::get<1>(value).v; }
+
+  std::variant<T, Error> value = Error{E{}};
+};
+
 } // namespace utils
 
 enum class Patt {
@@ -239,6 +256,10 @@ struct SMInstr {
 
 std::vector<SMInstr> parse_sm(std::istream &in);
 
-std::optional<SMInstr> parse_sm(const std::string &line);
+utils::Result<SMInstr> parse_sm(const std::string &line);
 
 std::string print_sm(const SMInstr &instr);
+
+// ---
+
+template struct utils::Result<SMInstr, std::string>;

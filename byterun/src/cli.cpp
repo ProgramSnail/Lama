@@ -26,11 +26,13 @@ int main(int argc, char **argv) {
     do_interpretation = true;
   } else if (strcmp(argv[1], "-sm") == 0) { // TODO: TMP, FOR CHECKS
     std::ifstream file(argv[2]);
+    std::cout << "-- parse\n";
     auto instrs = parse_sm(file);
-    std::cout << "instructions form file\n";
+    std::cout << "-- print\n";
     for (auto &instr : instrs) {
       std::cout << print_sm(instr) << "\n";
     }
+    return 0;
   }
 #ifdef WITH_CHECK
   else if (strcmp(argv[1], "-vi") == 0) {
