@@ -1,6 +1,8 @@
 // based on src/X86_64.ml
 
+extern "C" {
 #include "../../runtime/runtime.h"
+}
 
 #include "compiler.hpp"
 #include "sm_parser.hpp"
@@ -1954,8 +1956,8 @@ std::vector<Instr> compile(const Options &cmd, Env &env,
                        utils::filter<std::string>(
                            std::vector<std::string>{imports},
                            [](const auto &i) { return i != "Std"; }),
-                       [](const auto &i) -> Instr { 
-                         return Call{std::format("init" + i)};
+                       [](const auto &i) -> Instr {
+                         return Call{std::format("init {}", i)};
                 }) : std::vector<Instr>{}),
                 std::move(check_argc_code)
               );
