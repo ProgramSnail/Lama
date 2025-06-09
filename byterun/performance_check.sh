@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 
-dune build > /dev/null
+xmake build
+cp "build/linux/x86_64/release/byterun" byterun.exe
+
+# dune build > /dev/null
 
 compiler=../_build/default/src/Driver.exe
 
