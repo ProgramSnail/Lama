@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# xmake build
-# cp "build/linux/x86_64/release/byterun" byterun.exe
+xmake build
+cp "build/linux/x86_64/release/byterun" byterun.exe
 
-dune build > /dev/null
+# dune build > /dev/null
 
 prefix="../regression/"
 suffix=".lama"

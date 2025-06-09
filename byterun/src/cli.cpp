@@ -36,8 +36,11 @@ int main(int argc, char **argv) {
     return 0;
   } else if (strcmp(argv[1], "-s") == 0) {
     std::ifstream file(argv[2]);
-    auto instrs = compile_to_code(parse_sm(file));
-    for (auto &instr : instrs) {
+    // std::cout << "-- parse\n";
+    auto instrs = parse_sm(file);
+    // std::cout << "-- compile\n";
+    auto asm_instrs = compile_to_code(instrs);
+    for (auto &instr : asm_instrs) {
       std::cout << instr << "\n";
     }
     return 0;

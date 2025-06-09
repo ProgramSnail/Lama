@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <any>
 #include <charconv>
+#include <format>
 #include <functional>
 #include <iostream>
 #include <map>
+#include <sstream>
 #include <unordered_map>
 
 using Result = utils::Result<SMInstr, std::string>;
@@ -21,7 +23,9 @@ std::vector<SMInstr> parse_sm(std::istream &in) {
     std::string instr_str;
     std::getline(in, instr_str);
 
+#ifdef DEBUG
     std::cout << "line: <" << instr_str << ">\n";
+#endif
     if (instr_str.empty()) {
       continue;
     }
@@ -62,7 +66,9 @@ struct ParsingResult {
 //
 
 std::string_view trim(std::string_view str) {
+#ifdef DEBUG
   std::cout << __func__ << '\n';
+#endif
   auto begin = str.begin();
   for (; begin != str.end() && *begin == ' '; ++begin) {
   }
@@ -75,19 +81,25 @@ std::string_view trim(std::string_view str) {
 }
 
 std::string_view substr_to(std::string_view line, size_t &pos, char to) {
+#ifdef DEBUG
   std::cout << __func__ << " with " << line.substr(pos) << '\n';
+#endif
 
   auto offset = line.find(to, pos);
 
   if (offset == std::string::npos) {
+#ifdef DEBUG
     std::cout << "value \"\"\n";
+#endif
     return "";
   };
 
   std::string_view result = line.substr(pos, offset);
   pos += offset + 1;
 
+#ifdef DEBUG
   std::cout << "value " << result << "\n";
+#endif
   return result;
 }
 
@@ -99,23 +111,31 @@ template <typename T> using Matches = std::vector<std::pair<std::string, T>>;
 // not required here)
 template <typename T>
 ParsingResult prefix_matcher(std::string_view s, const Matches<T> &values) {
+#ifdef DEBUG
   std::cout << __func__ << '\n';
+#endif
   for (auto &value : values) {
     if (s.substr(0, value.first.size()) == value.first) {
       return {value.second, s.substr(value.first.size())};
     }
   }
 
+#ifdef DEBUG
   std::cout << "can't parse prefix from " << s << '\n';
+#endif
   return {{}, s};
 }
 
 ParsingResult parse_any_val(std::string_view s);
 
 ParsingResult parse_str(std::string_view s) {
+#ifdef DEBUG
   std::cout << __func__ << '\n';
+#endif
   if (s.size() < 2 || s.front() != '"') {
+#ifdef DEBUG
     std::cout << "can't parse string from " << s << '\n';
+#endif
     return {{}, s};
   }
 
@@ -135,13 +155,17 @@ ParsingResult parse_str(std::string_view s) {
 }
 
 ParsingResult parse_int(std::string_view s) {
+#ifdef DEBUG
   std::cout << __func__ << '\n';
+#endif
   int value = 0;
 
   auto res = std::from_chars(s.data(), s.data() + s.size(), value);
 
   if (res.ec != std::errc{}) {
+#ifdef DEBUG
     std::cout << "can't parse int from " << s << '\n';
+#endif
     return {{}, s};
   }
 
@@ -149,13 +173,17 @@ ParsingResult parse_int(std::string_view s) {
 }
 
 ParsingResult parse_bool(std::string_view s) {
+#ifdef DEBUG
   std::cout << __func__ << '\n';
+#endif
   static const Matches<bool> bools = {{"true", true}, {"false", false}};
   return prefix_matcher(s, bools);
 }
 
 ParsingResult parse_opr(std::string_view s) {
+#ifdef DEBUG
   std::cout << __func__ << '\n';
+#endif
   static const Matches<Opr> oprs = {
       {"+", Opr::ADD},  // +
       {"-", Opr::SUB},  // -
@@ -183,7 +211,9 @@ Opr any_opr_cast(std::any value) {
 }
 
 ParsingResult parse_patt(std::string_view s) {
+#ifdef DEBUG
   std::cout << __func__ << '\n';
+#endif
   static const Matches<Patt> patts = {
       {"Boxed", Patt::BOXED},   {"UnBoxed", Patt::UNBOXED},
       {"Array", Patt::ARRAY},   {"String", Patt::STRING},
@@ -204,7 +234,9 @@ Patt any_patt_cast(std::any value) {
 // ---
 
 ParsingResult parse_var(std::string_view s) {
+#ifdef DEBUG
   std::cout << __func__ << '\n';
+#endif
   static const std::map<std::string, std::function<ValT(std::any &&)>,
                         std::less<>>
       vars = {
@@ -234,7 +266,9 @@ ParsingResult parse_var(std::string_view s) {
   auto arg_str = std::string{substr_to(s, pos, ' ')};
   auto arg_it = vars.find(arg_str);
   if (arg_it == vars.end()) {
+#ifdef DEBUG
     std::cout << "can't parse var from " << s << '\n';
+#endif
     return {{}, s};
   }
   ++pos; // '('
@@ -242,21 +276,27 @@ ParsingResult parse_var(std::string_view s) {
   // NOTE: s_rest starts with ')'
   auto [id, s_rest] = parse_any_val(s.substr(pos));
   if (not id.has_value()) {
+#ifdef DEBUG
     std::cout << "any val: can't parse int from " << s << '\n';
+#endif
     return {{}, s};
   }
 
   try {
     return {arg_it->second(std::move(id)), s_rest.substr(1)}; // skip ')'
   } catch (const std::bad_any_cast &) {
+#ifdef DEBUG
     std::cout << "bad any cast: can't parse var from " << s << '\n';
+#endif
     return {{}, s};
   }
 }
 
 // (_, _)
 ParsingResult parse_pair(std::string_view s) {
+#ifdef DEBUG
   std::cout << __func__ << '\n';
+#endif
   if (s.size() < 2 || s.front() != '(') {
     return {};
   }
@@ -272,9 +312,13 @@ ParsingResult parse_pair(std::string_view s) {
 // [_, ..., _]
 ParsingResult parse_array(std::string_view s, char first_symbol = '[',
                           char last_symbol = ']') {
+#ifdef DEBUG
   std::cout << __func__ << '\n';
+#endif
   if (s.size() < 2 || s.front() != first_symbol) {
+#ifdef DEBUG
     std::cout << "can't parse array from " << s << '\n';
+#endif
     return {};
   }
 
@@ -291,7 +335,9 @@ ParsingResult parse_array(std::string_view s, char first_symbol = '[',
     res = parse_any_val(res.rest);
 
     if (not res.value.has_value()) {
+#ifdef DEBUG
       std::cout << "can't parse array elem from " << s << '\n';
+#endif
       return {{}, s};
     }
 
@@ -304,9 +350,13 @@ ParsingResult parse_array(std::string_view s, char first_symbol = '[',
 
 // { blab="_"; elab="_" names=[...]; subs=[...]}
 ParsingResult parse_scope(std::string_view s) {
+#ifdef DEBUG
   std::cout << __func__ << '\n';
+#endif
   if (s.size() < 2 || s.front() != '{') {
+#ifdef DEBUG
     std::cout << "can't parse scope from " << s << '\n';
+#endif
     return {};
   }
 
@@ -354,13 +404,17 @@ ParsingResult parse_scope(std::string_view s) {
 
     return {scope, res.rest.substr(3)}; // skip '; }'
   } catch (const std::bad_any_cast &) {
+#ifdef DEBUG
     std::cout << "bad any cast: can't parse int from " << s << '\n';
+#endif
     return {{}, s};
   }
 }
 
 ParsingResult parse_any_val(std::string_view s) {
+#ifdef DEBUG
   std::cout << __func__ << " with " << s << '\n';
+#endif
   ParsingResult res;
 
   if (res = parse_str(s); res.value.has_value()) {
@@ -541,7 +595,9 @@ private:
 };
 
 utils::Result<SMInstr> parse_sm(const std::string &line) {
+#ifdef DEBUG
   std::cout << __func__ << '\n';
+#endif
   std::unordered_map<std::string, SMInstr> to_instr = {
       {"BINOP", SMInstr{SMInstr::BINOP{}}},
       {"CONST", SMInstr{SMInstr::CONST{}}},
@@ -624,107 +680,165 @@ utils::Result<SMInstr> parse_sm(const std::string &line) {
   return instr.build();
 }
 
-// TODO: TMP: not efficient, for test purposes only
+// ---
+
+const char *print_opr(Opr opr) {
+  static const std::vector<const char *> oprs = {
+      "+",  // Opr::ADD,  // +
+      "-",  // Opr::SUB  // -
+      "*",  // Opr::MULT // *
+      "/",  // Opr::DIV  // /
+      "%",  // Opr::MOD  // %
+      "<=", // Opr::LEQ // <=
+      "<",  // Opr::LT   // <
+      ">",  // Opr::GT   // >
+      ">=", // Opr::GEQ // >=
+      "==", // Opr::EQ  // ==
+      "!=", // Opr::NEQ // !=
+      "&&", // Opr::AND // &&
+      "!!", // Opr::OR  // !!
+  }; // TODO: check format: cpp vs lama
+  return oprs.at(size_t(opr));
+}
+
+const char *print_patt(Patt patt) {
+  static const std::vector<const char *> patts = {
+      "Boxed",   // Patt::BOXED
+      "UnBoxed", // Patt::UNBOXED
+      "Array",   // Patt::ARRAY
+      "String",  // Patt::STRING
+      "SExp",    // Patt::SEXP
+      "Closure", // Patt::CLOSURE
+      "StrCmp",  // Patt::STRCMP
+  }; // TODO: check
+  return patts.at(size_t(patt));
+}
+
+std::string print_var(const ValT &var) {
+  return std::visit(utils::multifunc{
+                        [](const ValT::Global &x) -> std::string {
+                          return std::format("Global (\"{}\")", x.s);
+                        },
+                        [](const ValT::Fun &x) -> std::string {
+                          return std::format("Wun (\"{}\")", x.s);
+                        },
+                        [](const ValT::Local &x) -> std::string {
+                          return std::format("Local ({})", x.n);
+                        },
+                        [](const ValT::Arg &x) -> std::string {
+                          return std::format("Arg ({})", x.n);
+                        },
+                        [](const ValT::Access &x) -> std::string {
+                          return std::format("Access ({})", x.n);
+                        },
+                    },
+                    *var);
+}
+
+std::string print_var_array(const std::vector<ValT> &vars) {
+  std::stringstream result;
+  result << "[";
+  for (size_t i = 0; i < vars.size(); ++i) {
+    result << print_var(vars[i]);
+    if (i + 1 != vars.size()) {
+      result << ", ";
+    }
+  }
+  result << "]";
+  return result.str();
+}
+
 // TODO: number of printed information reduced for now
 std::string print_sm(const SMInstr &instr) {
   return {std::visit<std::string>( //
       utils::multifunc{
           //
           [](const SMInstr::PUBLIC &x) -> std::string {
-            return "PUBLIC [" + x.name + "]";
+            return std::format("PUBLIC (\"{}\")", x.name);
           },
           [](const SMInstr::EXTERN &x) -> std::string {
-            return "EXTERN [" + x.name + "]";
+            return std::format("EXTERN (\"{}\")", x.name);
           },
           [](const SMInstr::IMPORT &x) -> std::string {
-            return "IMPORT [" + x.name + "]";
+            return std::format("IMPORT (\"{}\")", x.name);
           },
           [](const SMInstr::CLOSURE &x) -> std::string {
-            return "CLOSURE [" + x.name +
-                   ". args_count=" + std::to_string(x.closure.size()) + "]";
+            return std::format("CLOSURE (\"{}\", {})", x.name,
+                               print_var_array(x.closure));
           },
           [](const SMInstr::CONST &x) -> std::string {
-            return "CONST [" + std::to_string(x.n) + "]";
+            return std::format("CONST ({})", x.n);
           },
           [](const SMInstr::STRING &x) -> std::string {
-            return "STRING [" + x.str + "]";
+            return std::format("STRING (\"{}\")", x.str);
           },
-          [](const SMInstr::LDA &) -> std::string {
-            // x.v
-            return "LDA";
+          [](const SMInstr::LDA &x) -> std::string {
+            return std::format("LDA ({})", print_var(x.v));
           },
-          [](const SMInstr::LD &) -> std::string {
-            // x.v
-            return "LD";
+          [](const SMInstr::LD &x) -> std::string {
+            return std::format("LD ({})", print_var(x.v));
           },
-          [](const SMInstr::ST &) -> std::string {
-            // x.v
-            return "ST";
+          [](const SMInstr::ST &x) -> std::string {
+            return std::format("ST ({})", print_var(x.v));
           },
           [](const SMInstr::STA &) -> std::string { return "STA"; },
           [](const SMInstr::STI &) -> std::string { return "STI"; },
-          [](const SMInstr::BINOP &) -> std::string {
-            // x.opr
-            return "BINOP";
+          [](const SMInstr::BINOP &x) -> std::string {
+            return std::format("BINOP (\"{}\")", print_opr(x.opr));
           },
           [](const SMInstr::LABEL &x) -> std::string {
-            return "LABEL [" + x.s + "]";
+            return std::format("LABEL (\"{}\")", x.s);
           },
           [](const SMInstr::FLABEL &x) -> std::string {
-            return "FLABEL [" + x.s + "]";
+            return std::format("FLABEL (\"{}\")", x.s);
           },
           [](const SMInstr::SLABEL &x) -> std::string {
-            return "SLABEL [" + x.s + "]";
+            return std::format("SLABEL (\"{}\")", x.s);
           },
           [](const SMInstr::JMP &x) -> std::string {
-            return "JMP [" + x.l + "]";
+            return std::format("JMP (\"{}\")", x.l);
           },
           [](const SMInstr::CJMP &x) -> std::string {
-            return "CJMP [" + x.s + ". " + x.l + "]";
+            return std::format("CJMP (\"{}\", \"{}\")", x.s, x.l);
           },
-          [](const SMInstr::BEGIN &) -> std::string {
-            // x.f
-            // x.nargs
-            // x.nlocals
+          [](const SMInstr::BEGIN &x) -> std::string {
             // x.closure
             // x.args
             // x.scopes
-            return "BEGIN";
+            return std::format("BEGIN (\"{}\", {}, {})", x.f, x.nargs,
+                               x.nlocals);
           },
           [](const SMInstr::END &) -> std::string { return "END"; },
           [](const SMInstr::RET &) -> std::string { return "RET"; },
           [](const SMInstr::ELEM &) -> std::string { return "ELEM"; },
           [](const SMInstr::CALL &x) -> std::string {
-            // x.tail
-            return "CALL [" + x.fname + ". " + std::to_string(x.n) + "]";
+            return std::format("CALL (\"{}\", {}, {})", x.fname, x.n,
+                               x.tail ? "true" : "false");
           },
           [](const SMInstr::CALLC &x) -> std::string {
-            // x.tail
-            return "CALLC [" + std::to_string(x.n) + "]";
+            return std::format("CALLC ({}, {})", x.n,
+                               x.tail ? "true" : "false");
           },
           [](const SMInstr::SEXP &x) -> std::string {
-            return "SEXP [" + x.tag + ". " + std::to_string(x.n) + "]";
+            return std::format("SEXP (\"{}\", {})", x.tag, x.n);
           },
           [](const SMInstr::DROP &) -> std::string { return "DROP"; },
           [](const SMInstr::DUP &) -> std::string { return "DUP"; },
           [](const SMInstr::SWAP &) -> std::string { return "SWAP"; },
           [](const SMInstr::TAG &x) -> std::string {
-            return "TAG [" + x.tag + ". " + std::to_string(x.n) + "]";
+            return std::format("TAG (\"{}\", {})", x.tag, x.n);
           },
           [](const SMInstr::ARRAY &x) -> std::string {
-            return "ARRAY [" + std::to_string(x.n) + "]";
+            return std::format("ARRAY ({})", x.n);
           },
-          [](const SMInstr::PATT &) -> std::string {
-            // x.patt
-            return "PATT";
+          [](const SMInstr::PATT &x) -> std::string {
+            return std::format("PATT (\"{}\")", print_patt(x.patt));
           },
           [](const SMInstr::LINE &x) -> std::string {
-            return "LINE [" + std::to_string(x.n) + "]";
+            return std::format("LINE ({})", x.n);
           },
           [](const SMInstr::FAIL &x) -> std::string {
-            return "FAIL [" + std::to_string(x.line) + ". " +
-                   std::to_string(x.col) + ". " + std::to_string(x.val) + ". " +
-                   "]";
+            return std::format("FAIL ({}, {}, {})", x.line, x.col, x.val);
           },
           // [](auto) -> std::string {
           //   throw std::bad_any_cast{}; // create another error ?

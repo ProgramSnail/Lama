@@ -1,7 +1,7 @@
 -- add_rules("mode.debug", "mode.release")
 -- add_rules("c++.unity_build")
 
-set_languages("c++23", "c23")
+set_languages("c++20", "c11")
 
 target("byterun")
     set_kind("binary")

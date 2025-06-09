@@ -159,7 +159,7 @@ T from_number(int n) {
   std::string str_of_int = std::to_string(n);
   std::string name64 = std::format("%r{}", str_of_int);
   std::string name8 = std::format("%r{}b", std::move(str_of_int));
-  return {.name = name8, .reg = {.name8 = name8, .name64 = name64}};
+  return {.name = name64, .reg = {.name8 = name8, .name64 = name64}};
 }
 T of_8bit(const T &r) { return {.name = r.reg.name8, .reg = r.reg}; }
 T of_64bit(const T &r) { return {.name = r.reg.name64, .reg = r.reg}; }
@@ -565,7 +565,7 @@ public:
 
   State next_state(const State &v) const {
     return std::visit(utils::multifunc{
-                          [](const S &x) -> State { return {S(x.n)}; },
+                          [](const S &x) -> State { return {S(x.n + 1)}; },
                           [this](const R &x) -> State {
                             if (x.n + 1 >= registers.size()) {
                               return {S(0)};
@@ -644,8 +644,9 @@ public:
   }
 
   Location pop() {
+    const auto loc = location();
     state = previous_state(state);
-    return location();
+    return loc;
   }
 
   Location peek() const { return location(); }
@@ -812,13 +813,11 @@ public:
   void set_stack(std::string const &l) { stackmap.insert({l, stack}); }
 
   /* retrieves a stack for a label */
-  std::optional<SymbolicStack *> retrieve_stack(std::string const &l) {
+  void retrieve_stack(std::string const &l) {
     auto it = stackmap.find(l);
     if (it != stackmap.end()) {
-      return &it->second;
+      stack = it->second;
     }
-
-    return std::nullopt;
   }
 
   /* checks if there is a stack for a label */
@@ -905,8 +904,8 @@ public:
   static uint64_t hash(const std::string &tag) {
     assert(!tag.empty());
     uint64_t h = 0;
-    for (size_t i = 0; i < std::min((tag.size() - 1), 9lu); ++i) {
-      h = (h << 6) | chars[tag[i]];
+    for (size_t i = 0; i < std::min(tag.size(), 9lu); ++i) {
+      h = (h << 6) | chars.find(tag[i]);
     }
     return h;
   }
@@ -956,11 +955,11 @@ public:
     };
     const auto y = escape(x);
 
-    const auto it = stringm.find(y);
+    auto it = stringm.find(y);
 
     if (it == stringm.end()) {
       const auto name = std::format("string_{}", scount);
-      stringm.insert({y, name});
+      it = stringm.insert({y, name}).first;
       ++scount;
     }
     return M{DataKind::D, Externality::I, Addressed::A, it->second};
@@ -1025,9 +1024,6 @@ public:
   /* generate a line number information for current function */
   std::vector<Instr> gen_line(size_t line) {
     const std::string lab = std::format(".L{}", nlabels);
-    ++nlabels;
-    first_line = false;
-
     std::vector<Instr> code;
     if (do_opt_stabs()) {
       if (fname == "main") {
@@ -1042,6 +1038,10 @@ public:
       }
     }
     code.push_back(Label{lab});
+
+    ++nlabels;
+    first_line = false;
+
     return code;
   }
 
@@ -1067,10 +1067,11 @@ std::string to_code(const Env &env, const Opnd &opnd) {
                               : std::format("-{}(%rbp)", offset);
           },
           [&env](const Opnd::M &x) {
-            return std::format(
-                "M {} {} {} {}", x.kind == DataKind::F ? "Function" : "Data",
-                x.ext == Externality::I ? "Internal" : "External",
-                x.addr == Addressed::A ? "Address" : "Value", x.name);
+            // NOTE: anotner way to show
+            // return std::format(
+            //     "M {} {} {} {}", x.kind == DataKind::F ? "Function" : "Data",
+            //     x.ext == Externality::I ? "Internal" : "External",
+            //     x.addr == Addressed::A ? "Address" : "Value", x.name);
             if (x.ext == Externality::I || x.kind == DataKind::F) {
               return std::format("{}(%rip)", x.name);
             }
@@ -1494,7 +1495,7 @@ std::pair<size_t, std::vector<Instr>> setup_arguments(Env &env, size_t nargs) {
 
 std::optional<Instr> setup_closure(Env &env,
                                    const std::optional<std::string> &fname) {
-  if (!fname) {
+  if (fname) {
     return {};
   }
   const auto closure = env.pop();
@@ -1629,7 +1630,7 @@ std::vector<Instr> compile_call(Env &env,
                                 size_t nargs, bool tail) {
   std::optional<std::string> fname;
   if (fname_in) {
-    fname = (*fname_in)[0] == '.' ? utils::labeled_builtin(fname->substr(1))
+    fname = (*fname_in)[0] == '.' ? utils::labeled_builtin(fname_in->substr(1))
                                   : std::string{*fname_in};
   }
 
@@ -1695,213 +1696,229 @@ std::vector<Instr> compile(const Options &cmd, Env &env,
                            const SMInstr &instr) {
   using namespace utils::compile;
 
-  const std::string stack_state = env.mode.is_debug ? env.print_stack() : "";
-  if (env.is_barrier()) {
-    return std::visit( //
-        utils::multifunc{
-            //
-            [&env](const SMInstr::LABEL &x) -> std::vector<Instr> {
-              if (env.has_stack(x.s)) {
-                env.drop_barrier();
-                env.retrieve_stack(x.s);
-                return {Label{x.s}};
-              }
-              env.drop_stack();
-              return {};
-            },
-            [&env](const SMInstr::FLABEL &x) -> std::vector<Instr> {
-              env.drop_barrier();
-              return {Label{x.s}};
-            },
-            [](const SMInstr::SLABEL &x) -> std::vector<Instr> {
-              return {Label{x.s}};
-            },
-            [](const auto &) -> std::vector<Instr> { return {}; },
-        },
-        *instr);
+  auto instr_str = print_sm(instr);
+  std::vector<Instr> debug_info;
+  if (env.mode.is_debug) {
+    debug_info.push_back(Meta{"# " + instr_str});
+    debug_info.push_back(Meta{"# " + env.print_stack()});
   } else {
-    return std::visit( //
-        utils::multifunc{
-            //
-            [&env](const SMInstr::PUBLIC &x)
-                -> std::vector<Instr> { // NOTE: not required in bytecode
-              env.register_public(x.name);
-              return {};
+    debug_info.push_back(Meta{"# " + instr_str});
+  }
+  if (env.is_barrier()) {
+    return utils::concat(
+        std::move(debug_info),
+        std::visit( //
+            utils::multifunc{
+                //
+                [&env](const SMInstr::LABEL &x) -> std::vector<Instr> {
+                  if (env.has_stack(x.s)) {
+                    env.drop_barrier();
+                    env.retrieve_stack(x.s);
+                    return {Label{x.s}};
+                  }
+                  env.drop_stack();
+                  return {};
+                },
+                [&env](const SMInstr::FLABEL &x) -> std::vector<Instr> {
+                  env.drop_barrier();
+                  return {Label{x.s}};
+                },
+                [](const SMInstr::SLABEL &x) -> std::vector<Instr> {
+                  return {Label{x.s}};
+                },
+                [](const auto &) -> std::vector<Instr> { return {}; },
             },
-            [&env](const SMInstr::EXTERN &x)
-                -> std::vector<Instr> { // NOTE: not required in bytecode
-              env.register_extern(x.name);
-              return {};
-            },
-            [](const SMInstr::IMPORT &)
-                -> std::vector<Instr> { // NOTE: not required in bytecode
-              return {};
-            },
-            [&env](const SMInstr::CLOSURE &x) -> std::vector<Instr> {
-              // NOTE: probably will change for bytecode cmd
-              const Externality ext =
-                  env.is_external(x.name) ? Externality::E : Externality::I;
-              const auto address = M{DataKind::F, ext, Addressed::A, x.name};
-              const auto l = env.allocate();
+            *instr));
+  } else {
+    return utils::concat(
+        std::move(debug_info),
+        std::visit( //
+            utils::multifunc{
+                //
+                [&env](const SMInstr::PUBLIC &x)
+                    -> std::vector<Instr> { // NOTE: not required in bytecode
+                  env.register_public(x.name);
+                  return {};
+                },
+                [&env](const SMInstr::EXTERN &x)
+                    -> std::vector<Instr> { // NOTE: not required in bytecode
+                  env.register_extern(x.name);
+                  return {};
+                },
+                [](const SMInstr::IMPORT &)
+                    -> std::vector<Instr> { // NOTE: not required in bytecode
+                  return {};
+                },
+                [&env](const SMInstr::CLOSURE &x) -> std::vector<Instr> {
+                  // NOTE: probably will change for bytecode cmd
+                  const Externality ext =
+                      env.is_external(x.name) ? Externality::E : Externality::I;
+                  const auto address =
+                      M{DataKind::F, ext, Addressed::A, x.name};
+                  const auto l = env.allocate();
 
-              std::vector<Instr> result;
-              result.reserve(x.closure.size());
-              for (const auto &c : x.closure) {
-                const auto cr = env.allocate();
-                std::vector<Instr> mov_result = mov(env.loc(c), cr);
-                result =
-                    utils::concat(std::move(result), std::move(mov_result));
-              }
-              std::reverse(result.begin(), result.end());
-              return utils::concat(
-                  std::move(result), mov(address, l),
-                  compile_call(env, ".closure", 1 + x.closure.size(), false));
-            },
-            [&env](const SMInstr::CONST &x) -> std::vector<Instr> {
-              const auto s = env.allocate();
-              return {Mov{L{box(x.n)}, s}};
-            },
-            [&env](const SMInstr::STRING &x) -> std::vector<Instr> {
-              const auto addr = env.register_string(x.str);
-              const auto l = env.allocate();
-              return utils::concat(mov(addr, l),
-                                   compile_call(env, ".string", 1, false));
-            },
-            [&env](const SMInstr::LDA &x) -> std::vector<Instr> {
-              env.register_variable(x.v);
-              const auto s = env.allocate();
-              const auto s_ = env.allocate();
-              return std::vector<Instr>{Lea{env.loc(x.v), rax}, Mov{rax, s},
-                                        Mov{rax, s_}};
-            },
-            [&env](const SMInstr::LD &x) -> std::vector<Instr> {
-              const auto s = env.allocate();
-              return s.is<S>() || s.is<M>()
-                         ? std::vector<Instr>{Mov{s, rax},
-                                              Mov{rax, env.loc(x.v)}}
-                         : std::vector<Instr>{Mov{s, env.loc(x.v)}};
-            },
-            [&env](const SMInstr::ST &x) -> std::vector<Instr> {
-              env.register_variable(x.v);
-              const auto s = env.peek();
-              return s.is<S>() || s.is<M>()
-                         ? std::vector<Instr>{Mov{s, rax},
-                                              Mov{rax, env.loc(x.v)}}
-                         : std::vector<Instr>{Mov{s, env.loc(x.v)}};
-            },
-            [&env](const SMInstr::STA &) -> std::vector<Instr> {
-              return compile_call(env, ".sta", 3, false);
-            },
-            [&env](const SMInstr::STI &) -> std::vector<Instr> {
-              const auto v = env.pop();
-              const auto x = env.peek();
-              return x.is<S>() || x.is<M>()
+                  std::vector<Instr> result;
+                  result.reserve(x.closure.size());
+                  for (const auto &c : x.closure) {
+                    const auto cr = env.allocate();
+                    std::vector<Instr> mov_result = mov(env.loc(c), cr);
+                    result =
+                        utils::concat(std::move(result), std::move(mov_result));
+                  }
+                  std::reverse(result.begin(), result.end());
+                  return utils::concat(std::move(result), mov(address, l),
+                                       compile_call(env, ".closure",
+                                                    1 + x.closure.size(),
+                                                    false));
+                },
+                [&env](const SMInstr::CONST &x) -> std::vector<Instr> {
+                  const auto s = env.allocate();
+                  return {Mov{L{box(x.n)}, s}};
+                },
+                [&env](const SMInstr::STRING &x) -> std::vector<Instr> {
+                  const auto addr = env.register_string(x.str);
+                  const auto l = env.allocate();
+                  return utils::concat(mov(addr, l),
+                                       compile_call(env, ".string", 1, false));
+                },
+                [&env](const SMInstr::LDA &x) -> std::vector<Instr> {
+                  env.register_variable(x.v);
+                  const auto s = env.allocate();
+                  const auto s_ = env.allocate();
+                  return std::vector<Instr>{Lea{env.loc(x.v), rax}, Mov{rax, s},
+                                            Mov{rax, s_}};
+                },
+                [&env](const SMInstr::LD &x) -> std::vector<Instr> {
+                  const auto s = env.allocate();
+                  return s.is<S>() || s.is<M>()
+                             ? std::vector<Instr>{Mov{s, rax},
+                                                  Mov{rax, env.loc(x.v)}}
+                             : std::vector<Instr>{Mov{env.loc(x.v), s}};
+                },
+                [&env](const SMInstr::ST &x) -> std::vector<Instr> {
+                  env.register_variable(x.v);
+                  const auto s = env.peek();
+                  return s.is<S>() || s.is<M>()
+                             ? std::vector<Instr>{Mov{s, rax},
+                                                  Mov{rax, env.loc(x.v)}}
+                             : std::vector<Instr>{Mov{s, env.loc(x.v)}};
+                },
+                [&env](const SMInstr::STA &) -> std::vector<Instr> {
+                  return compile_call(env, ".sta", 3, false);
+                },
+                [&env](const SMInstr::STI &) -> std::vector<Instr> {
+                  const auto v = env.pop();
+                  const auto x = env.peek();
+                  return x.is<S>() || x.is<M>()
                          ? std::vector<Instr>{Mov{v, rdx},Mov{x, rax},Mov{rdx, I{0, rax}},Mov{rdx, x},
                                               }
                          : std::vector<Instr>{Mov{v, rax}, Mov{rax, I{0, x}}, Mov{rax, x}};
-            },
-            [&env](const SMInstr::BINOP &x) -> std::vector<Instr> {
-              return compile_binop(env, x.opr);
-            },
-            [](const SMInstr::LABEL &x) -> std::vector<Instr> {
-              return {Label{x.s}};
-            },
-            [](const SMInstr::FLABEL &x) -> std::vector<Instr> {
-              return {Label{x.s}};
-            },
-            [](const SMInstr::SLABEL &x) -> std::vector<Instr> {
-              return {Label{x.s}};
-            },
-            [&env](const SMInstr::JMP &x) -> std::vector<Instr> {
-              env.set_stack(x.l);
-              env.set_barrier();
-              return {Jmp{x.l}};
-            },
-            [&env](const SMInstr::CJMP &y) -> std::vector<Instr> {
-              const auto x = env.pop();
-              env.set_stack(y.l);
-              return {Sar1{x}, /*!!!*/ Binop{Opr::CMP, L{0}, x},
-                      CJmp{y.s, y.l}};
-            },
-            [&env, &imports,
-             &cmd](const SMInstr::BEGIN &x) -> std::vector<Instr> {
-              {
-                const bool is_safepoint = safepoint_functions.count(x.f) != 0;
-                const bool is_vararg = vararg_functions.count(x.f) != 0;
-                if (is_safepoint && is_vararg) {
-                  failure("Function name %s is reserved for built-in",
-                          x.f.c_str());
-                }
-              }
+                },
+                [&env](const SMInstr::BINOP &x) -> std::vector<Instr> {
+                  return compile_binop(env, x.opr);
+                },
+                [](const SMInstr::LABEL &x) -> std::vector<Instr> {
+                  return {Label{x.s}};
+                },
+                [](const SMInstr::FLABEL &x) -> std::vector<Instr> {
+                  return {Label{x.s}};
+                },
+                [](const SMInstr::SLABEL &x) -> std::vector<Instr> {
+                  return {Label{x.s}};
+                },
+                [&env](const SMInstr::JMP &x) -> std::vector<Instr> {
+                  env.set_stack(x.l);
+                  env.set_barrier();
+                  return {Jmp{x.l}};
+                },
+                [&env](const SMInstr::CJMP &y) -> std::vector<Instr> {
+                  const auto x = env.pop();
+                  env.set_stack(y.l);
+                  return {Sar1{x}, /*!!!*/ Binop{Opr::CMP, L{0}, x},
+                          CJmp{y.s, y.l}};
+                },
+                [&env, &imports,
+                 &cmd](const SMInstr::BEGIN &x) -> std::vector<Instr> {
+                  {
+                    const bool is_safepoint =
+                        safepoint_functions.count(x.f) != 0;
+                    const bool is_vararg = vararg_functions.count(x.f) != 0;
+                    if (is_safepoint && is_vararg) {
+                      failure("Function name %s is reserved for built-in",
+                              x.f.c_str());
+                    }
+                  }
 
-              const std::string name = (x.f[0] == 'L' ? x.f.substr(1) : x.f);
+                  const std::string name =
+                      (x.f[0] == 'L' ? x.f.substr(1) : x.f);
 
-              const auto stabs = [&env, &x, &name]() -> std::vector<Instr> {
-                if (!env.do_opt_stabs()) {
-                  return {};
-                }
-                if (x.f == "main") {
-                  return {Meta{"\t.type main, @function"}};
-                }
+                  const auto stabs = [&env, &x, &name]() -> std::vector<Instr> {
+                    if (!env.do_opt_stabs()) {
+                      return {};
+                    }
+                    if (x.f == "main") {
+                      return {Meta{"\t.type main, @function"}};
+                    }
 
-                std::vector<Instr> func = {
-                    Meta{std::format("\t.type {}, @function", name)},
-                    Meta{
-                        std::format("\t.stabs \"{}:F1\",36,0,0,{}", name, x.f)},
-                };
+                    std::vector<Instr> func = {
+                        Meta{std::format("\t.type {}, @function", name)},
+                        Meta{std::format("\t.stabs \"{}:F1\",36,0,0,{}", name,
+                                         x.f)},
+                    };
 
-                std::vector<Instr> arguments =
-                    {} /* OCAML_VER: TODO: stabs for function arguments */;
+                    std::vector<Instr> arguments =
+                        {} /* OCAML_VER: TODO: stabs for function arguments */;
 
-                std::vector<Instr> variables;
-                for (const auto &scope : x.scopes) {
-                  utils::insert(variables, stabs_scope(env, x, scope));
-                }
+                    std::vector<Instr> variables;
+                    for (const auto &scope : x.scopes) {
+                      utils::insert(variables, stabs_scope(env, x, scope));
+                    }
 
-                return utils::concat(std::move(func), std::move(arguments),
-                                     std::move(variables));
-              };
+                    return utils::concat(std::move(func), std::move(arguments),
+                                         std::move(variables));
+                  };
 
-              auto stabs_code = stabs();
+                  auto stabs_code = stabs();
 
-              const auto check_argc = [&env, &cmd, &x,
-                                       &name]() -> std::vector<Instr> {
-                if (x.f == cmd.topname) {
-                  return {};
-                }
+                  const auto check_argc = [&env, &cmd, &x,
+                                           &name]() -> std::vector<Instr> {
+                    if (x.f == cmd.topname) {
+                      return {};
+                    }
 
-                auto argc_correct_label = x.f + "_argc_correct";
-                auto pat_addr = // TODO: check is that is the same string to
-                                // ocaml version one
-                    env.register_string(
-                        "Function %s called with incorrect arguments count. \
+                    std::string argc_correct_label = x.f + "_argc_correct";
+                    auto pat_addr = // TODO: check is that is the same string to
+                                    // ocaml version one
+                        env.register_string(
+                            "Function %s called with incorrect arguments count. \
                          Expected: %d. Actual: %d\\n");
-                auto name_addr = env.register_string(name);
-                const auto pat_loc = env.allocate();
-                const auto name_loc = env.allocate();
-                const auto expected_loc = env.allocate();
-                const auto actual_loc = env.allocate();
-                std::vector<Instr> fail_call =
-                    compile_call(env, "failure", 4, false);
+                    auto name_addr = env.register_string(name);
+                    const auto pat_loc = env.allocate();
+                    const auto name_loc = env.allocate();
+                    const auto expected_loc = env.allocate();
+                    const auto actual_loc = env.allocate();
+                    std::vector<Instr> fail_call =
+                        compile_call(env, "failure", 4, false);
 
-                env.pop();
-                return utils::concat(
-                    std::vector<Instr>{
-                        Meta{"# Check arguments count"},
-                        Binop{Opr::CMP, L{x.nargs}, r11},
-                        CJmp{"e", argc_correct_label},
-                        Mov{r11, actual_loc},
-                        Mov{L{x.nargs}, expected_loc},
-                        Mov{name_addr, name_loc},
-                        Mov{pat_addr, pat_loc},
-                    },
-                    std::move(fail_call), Instr{Label{argc_correct_label}});
-              };
-              auto check_argc_code = check_argc();
-              env.assert_empty_stack();
-              const bool has_closure = !x.closure.empty();
-              env.enter(x.f, x.nargs, x.nlocals, has_closure);
-              return utils::concat(
+                    env.pop();
+                    return utils::concat(
+                        std::vector<Instr>{
+                            Meta{"# Check arguments count"},
+                            Binop{Opr::CMP, L{x.nargs}, r11},
+                            CJmp{"e", argc_correct_label},
+                            Mov{r11, actual_loc},
+                            Mov{L{x.nargs}, expected_loc},
+                            Mov{name_addr, name_loc},
+                            Mov{pat_addr, pat_loc},
+                        },
+                        std::move(fail_call), Instr{Label{argc_correct_label}});
+                  };
+                  auto check_argc_code = check_argc();
+                  env.assert_empty_stack();
+                  const bool has_closure = !x.closure.empty();
+                  env.enter(x.f, x.nargs, x.nlocals, has_closure);
+
+                  return utils::concat(
                 std::move(stabs_code),
                 Instr{Meta{"\t.cfi_startproc"}},
                 (x.f == cmd.topname ? std::vector<Instr>{
@@ -1957,154 +1974,156 @@ std::vector<Instr> compile(const Options &cmd, Env &env,
                            std::vector<std::string>{imports},
                            [](const auto &i) { return i != "Std"; }),
                        [](const auto &i) -> Instr {
-                         return Call{std::format("init {}", i)};
+                         return Call{std::format("init{}", i)};
                 }) : std::vector<Instr>{}),
                 std::move(check_argc_code)
               );
-            },
-            [&env](const SMInstr::END &) -> std::vector<Instr> {
-              const auto x = env.pop();
-              env.assert_empty_stack();
-              const auto &name = env.fname;
-              std::optional<Instr> stabs =
-                  env.do_opt_stabs()
-                      ? Meta{std::format("\t.size {}, .-{}", name, name)}
-                      : std::optional<Instr>{};
+                },
+                [&env](const SMInstr::END &) -> std::vector<Instr> {
+                  const auto x = env.pop();
+                  env.assert_empty_stack();
+                  const auto &name = env.fname;
+                  std::optional<Instr> stabs =
+                      env.do_opt_stabs()
+                          ? Meta{std::format("\t.size {}, .-{}", name, name)}
+                          : std::optional<Instr>{};
 
-              std::vector<Instr> result = utils::concat(
-                  std::vector<Instr>{
-                      Mov{x, rax},
-                      /*!!*/
-                      Label{env.epilogue()},
-                      Mov{rbp, rsp},
-                      Pop{rbp},
-                  },
-                  std::optional<Instr>{name == "main"
-                                           ? Binop{Opr::XOR, rax, rax}
-                                           : std::optional<Instr>{}},
-                  std::vector<Instr>{
-                      Meta{"\t.cfi_restore\t5"},
-                      Meta{"\t.cfi_def_cfa\t4, 4"},
-                      Ret{},
-                      Meta{"\t.cfi_endproc"},
-                      Meta{
-                          /* Allocate space for the symbolic stack
-                             Add extra word if needed to preserve alignment */
-                          std::format(
-                              "\t.set\t{},\t{}", env.prefixed(env.lsize()),
-                              (env.get_allocated() % 2 == 0
-                                   ? (env.get_allocated() * word_size)
-                                   : ((env.get_allocated() + 1) * word_size)))},
-                      Meta{std::format("\t.set\t{},\t{}",
-                                       env.prefixed(env.get_allocated_size()),
-                                       env.get_allocated())},
-                  },
-                  std::move(stabs));
+                  std::vector<Instr> result = utils::concat(
+                      std::vector<Instr>{
+                          Mov{x, rax},
+                          /*!!*/
+                          Label{env.epilogue()},
+                          Mov{rbp, rsp},
+                          Pop{rbp},
+                      },
+                      std::optional<Instr>{name == "main"
+                                               ? Binop{Opr::XOR, rax, rax}
+                                               : std::optional<Instr>{}},
+                      std::vector<Instr>{
+                          Meta{"\t.cfi_restore\trbp"},
+                          Meta{"\t.cfi_def_cfa\t4, 4"},
+                          Ret{},
+                          Meta{"\t.cfi_endproc"},
+                          Meta{/* Allocate space for the symbolic stack
+                                  Add extra word if needed to preserve alignment
+                                */
+                               std::format(
+                                   "\t.set\t{},\t{}", env.prefixed(env.lsize()),
+                                   (env.get_allocated() % 2 == 0
+                                        ? (env.get_allocated() * word_size)
+                                        : ((env.get_allocated() + 1) *
+                                           word_size)))},
+                          Meta{std::format(
+                              "\t.set\t{},\t{}",
+                              env.prefixed(env.get_allocated_size()),
+                              env.get_allocated())},
+                      },
+                      std::move(stabs));
 
-              env.leave();
-              return result;
+                  env.leave();
+                  return result;
+                },
+                [&env](const SMInstr::RET &) -> std::vector<Instr> {
+                  const auto x = env.peek();
+                  return {Mov{x, rax}, Jmp{env.epilogue()}};
+                },
+                [&env](const SMInstr::ELEM &) -> std::vector<Instr> {
+                  return compile_call(env, ".elem", 2, false);
+                },
+                [&env](const SMInstr::CALL &x) -> std::vector<Instr> {
+                  return compile_call(env, x.fname, x.n, x.tail); // call
+                },
+                [&env](const SMInstr::CALLC &x) -> std::vector<Instr> {
+                  return compile_call(env, {}, x.n, x.tail); // closure call
+                },
+                [&env](const SMInstr::SEXP &x) -> std::vector<Instr> {
+                  const auto s = env.allocate();
+                  auto code = compile_call(env, ".sexp", x.n + 1, false);
+                  return utils::concat(mov(L{box(env.hash(x.tag))}, s),
+                                       std::move(code));
+                },
+                [&env](const SMInstr::DROP &) -> std::vector<Instr> {
+                  env.pop();
+                  return {};
+                },
+                [&env](const SMInstr::DUP &) -> std::vector<Instr> {
+                  const auto x = env.peek();
+                  const auto s = env.allocate();
+                  return mov(x, s);
+                },
+                [&env](const SMInstr::SWAP &) -> std::vector<Instr> {
+                  const auto [x, y] = env.peek2();
+                  return {Push{x}, Push{y}, Pop{x}, Pop{y}};
+                },
+                [&env](const SMInstr::TAG &x) -> std::vector<Instr> {
+                  const auto s1 = env.allocate();
+                  const auto s2 = env.allocate();
+                  auto code = compile_call(env, ".tag", 3, false);
+                  return utils::concat(mov(L{box(env.hash(x.tag))}, s1),
+                                       mov(L{box(x.n)}, s2), std::move(code));
+                },
+                [&env](const SMInstr::ARRAY &x) -> std::vector<Instr> {
+                  const auto s = env.allocate();
+                  auto code = compile_call(env, ".array_patt", 2, false);
+                  return utils::concat(std::vector<Instr>{Mov{L{box(x.n)}, s}},
+                                       std::move(code));
+                },
+                [&env](const SMInstr::PATT &x) -> std::vector<Instr> {
+                  std::string fname;
+                  switch (x.patt) {
+                  case Patt::STRCMP:
+                    return compile_call(env, ".string_patt", 2, false);
+                  case Patt::BOXED:
+                    fname = ".boxed_patt";
+                    break;
+                  case Patt::UNBOXED:
+                    fname = ".unboxed_patt";
+                    break;
+                  case Patt::ARRAY:
+                    fname = ".array_tag_patt";
+                    break;
+                  case Patt::STRING:
+                    fname = ".string_tag_patt";
+                    break;
+                  case Patt::SEXP:
+                    fname = ".sexp_tag_patt";
+                    break;
+                  case Patt::CLOSURE:
+                    fname = ".closure_tag_patt";
+                    break;
+                  default:
+                    failure("Unexpected pattern %s: %d", __FILE__, __LINE__);
+                    break;
+                  }
+                  return compile_call(env, fname, 1, false);
+                },
+                [&env](const SMInstr::LINE &x) -> std::vector<Instr> {
+                  return env.gen_line(x.n);
+                },
+                [&env, &cmd](const SMInstr::FAIL &x) -> std::vector<Instr> {
+                  const auto v = x.val ? env.peek() : env.pop();
+                  const auto msg_addr = env.register_string(cmd.filename);
+                  const auto vr = env.allocate();
+                  const auto sr = env.allocate();
+                  const auto liner = env.allocate();
+                  const auto colr = env.allocate();
+                  auto code = compile_call(env, ".match_failure", 4, false);
+                  env.pop();
+                  return utils::concat(
+                      std::vector<Instr>{
+                          Mov{L{static_cast<int>(x.col)}, colr},
+                          Mov{L{static_cast<int>(x.line)}, liner},
+                          Mov{msg_addr, sr},
+                          Mov{v, vr},
+                      },
+                      std::move(code));
+                },
+                [](const auto &) -> std::vector<Instr> {
+                  failure("invalid SM insn\n"); // TODO: better error
+                  utils::unreachable();
+                },
             },
-            [&env](const SMInstr::RET &) -> std::vector<Instr> {
-              const auto x = env.peek();
-              return {Mov{x, rax}, Jmp{env.epilogue()}};
-            },
-            [&env](const SMInstr::ELEM &) -> std::vector<Instr> {
-              return compile_call(env, ".elem", 2, false);
-            },
-            [&env](const SMInstr::CALL &x) -> std::vector<Instr> {
-              return compile_call(env, x.fname, x.n, x.tail); // call
-            },
-            [&env](const SMInstr::CALLC &x) -> std::vector<Instr> {
-              return compile_call(env, {}, x.n, x.tail); // closure call
-            },
-            [&env](const SMInstr::SEXP &x) -> std::vector<Instr> {
-              const auto s = env.allocate();
-              auto code = compile_call(env, ".sexp", x.n + 1, false);
-              return utils::concat(mov(L{box(env.hash(x.tag))}, s),
-                                   std::move(code));
-            },
-            [&env](const SMInstr::DROP &) -> std::vector<Instr> {
-              env.pop();
-              return {};
-            },
-            [&env](const SMInstr::DUP &) -> std::vector<Instr> {
-              const auto x = env.peek();
-              const auto s = env.allocate();
-              return mov(x, s);
-            },
-            [&env](const SMInstr::SWAP &) -> std::vector<Instr> {
-              const auto [x, y] = env.peek2();
-              return {Push{x}, Push{y}, Pop{x}, Pop{y}};
-            },
-            [&env](const SMInstr::TAG &x) -> std::vector<Instr> {
-              const auto s1 = env.allocate();
-              const auto s2 = env.allocate();
-              auto code = compile_call(env, ".tag", 3, false);
-              return utils::concat(mov(L{box(env.hash(x.tag))}, s1),
-                                   mov(L{box(x.n)}, s2), std::move(code));
-            },
-            [&env](const SMInstr::ARRAY &x) -> std::vector<Instr> {
-              const auto s = env.allocate();
-              auto code = compile_call(env, ".array_patt", 2, false);
-              return utils::concat(std::vector<Instr>{Mov{L{box(x.n)}, s}},
-                                   std::move(code));
-            },
-            [&env](const SMInstr::PATT &x) -> std::vector<Instr> {
-              std::string fname;
-              switch (x.patt) {
-              case Patt::STRCMP:
-                return compile_call(env, ".string_patt", 2, false);
-              case Patt::BOXED:
-                fname = ".boxed_patt";
-                break;
-              case Patt::UNBOXED:
-                fname = ".unboxed_patt";
-                break;
-              case Patt::ARRAY:
-                fname = ".array_tag_patt";
-                break;
-              case Patt::STRING:
-                fname = ".string_tag_patt";
-                break;
-              case Patt::SEXP:
-                fname = ".sexp_tag_patt";
-                break;
-              case Patt::CLOSURE:
-                fname = ".closure_tag_patt";
-                break;
-              default:
-                failure("Unexpected pattern %s: %d", __FILE__, __LINE__);
-                break;
-              }
-              return compile_call(env, fname, 1, false);
-            },
-            [&env](const SMInstr::LINE &x) -> std::vector<Instr> {
-              return env.gen_line(x.n);
-            },
-            [&env, &cmd](const SMInstr::FAIL &x) -> std::vector<Instr> {
-              const auto v = x.val ? env.peek() : env.pop();
-              const auto msg_addr = env.register_string(cmd.filename);
-              const auto vr = env.allocate();
-              const auto sr = env.allocate();
-              const auto liner = env.allocate();
-              const auto colr = env.allocate();
-              auto code = compile_call(env, ".match_failure", 4, false);
-              env.pop();
-              return utils::concat(
-                  std::vector<Instr>{
-                      Mov{L{static_cast<int>(x.col)}, colr},
-                      Mov{L{static_cast<int>(x.line)}, liner},
-                      Mov{msg_addr, sr},
-                      Mov{v, vr},
-                  },
-                  std::move(code));
-            },
-            [](const auto &) -> std::vector<Instr> {
-              failure("invalid SM insn\n"); // TODO: better error
-              utils::unreachable();
-            },
-        },
-        *instr);
+            *instr));
   }
 }
 
@@ -2120,8 +2139,8 @@ std::vector<Instr> compile(const Options &cmd, Env &env,
 }
 
 std::vector<std::string> compile_to_code(const std::vector<SMInstr> &code) {
-  Options cmd{.topname = "byterun", .filename = "byterun"}; // TODO TMP
-  Env env(Mode{.is_debug = true, .target_os = OS::LINUX});
+  Options cmd{.topname = "main", .filename = "byterun"}; // TODO TMP
+  Env env(Mode{.is_debug = false, .target_os = OS::LINUX});
 
   auto asm_code = compile(cmd, env, {/*imports (TODO TMP)*/}, code);
   std::vector<std::string> res;
