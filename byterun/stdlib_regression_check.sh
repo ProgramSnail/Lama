@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 
-# TODO: FIXME: error on test 3, possible UB or standard change
-# xmake build
-# cp "build/linux/x86_64/release/byterun" byterun.exe
+xmake build
+cp "build/linux/x86_64/release/byterun" byterun.exe
 
-dune build > /dev/null
+# dune build > /dev/null
 
 prefix="../stdlib/regression/"
 suffix=".lama"
